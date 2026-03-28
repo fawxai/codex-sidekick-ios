@@ -167,12 +167,18 @@ final class AppModel {
             return
         }
 
-        pairedConnection = restored.stored
         connectionDraft = ConnectionDraft(
             websocketURL: restored.stored.websocketURL,
             authToken: restored.token ?? ""
         )
         discoveryInput = restored.stored.suggestedDiscoveryTarget
+
+        if restored.stored.endpointKind == .local {
+            try? pairingStore.clear()
+            return
+        }
+
+        pairedConnection = restored.stored
         await connect()
     }
 
