@@ -29,7 +29,7 @@ struct PairingView: View {
             case .local:
                 return "Loopback pairing for simulator and same-Mac testing. Bearer token is optional."
             case .tailscale:
-                return "Tailnet pairing for your phone. Use the discovery flow above or a `.ts.net` websocket URL with a bearer token."
+                return "Tailnet pairing for your phone. Use the discovery flow above or a `.ts.net` / Tailscale IP websocket URL with a bearer token."
             case .manual:
                 return "Advanced remote endpoint. Use `wss://` if you need bearer auth outside localhost or Tailscale."
             }
@@ -129,7 +129,7 @@ struct PairingView: View {
                         .font(theme.codeFont(18, weight: .semibold))
                         .foregroundStyle(theme.textPrimary)
 
-                    Text("Choose the trust path first. Tailscale uses discovery plus a short-lived claim code in this same flow, while local and manual paths expose the raw websocket connection directly.")
+                    Text("Choose the trust path first. For Tailscale, paste the discovery target, enter the short code, and pair in one step. Local and manual paths expose the raw websocket connection directly.")
                         .font(theme.font(13))
                         .foregroundStyle(theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -189,25 +189,6 @@ struct PairingView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .sidekickInputFieldStyle()
-
-                HStack(spacing: 8) {
-                    Button {
-                        Task {
-                            await appModel.discoverHost()
-                        }
-                    } label: {
-                        HStack(spacing: 10) {
-                            if appModel.isDiscoveringHost {
-                                ProgressView()
-                                    .tint(theme.backgroundBottom)
-                            }
-
-                            Text(appModel.isDiscoveringHost ? "Discovering..." : "Discover Host")
-                        }
-                    }
-                    .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
-                    .disabled(appModel.isBusyPairing)
-                }
             }
 
             if let discoveredHost = appModel.discoveredHost {
@@ -227,20 +208,24 @@ struct PairingView: View {
                 HStack(spacing: 8) {
                     Button {
                         Task {
-                            await appModel.claimDiscoveredHost()
+                            await appModel.pairWithDiscoveryCode()
                         }
                     } label: {
                         HStack(spacing: 10) {
-                            if appModel.isClaimingPairing || appModel.isConnecting {
+                            if appModel.isDiscoveringHost || appModel.isClaimingPairing || appModel.isConnecting {
                                 ProgressView()
                                     .tint(theme.backgroundBottom)
                             }
 
-                            Text(appModel.isClaimingPairing || appModel.isConnecting ? "Pairing..." : "Redeem Code & Pair")
+                            Text(appModel.isDiscoveringHost || appModel.isClaimingPairing || appModel.isConnecting ? "Pairing..." : "Pair with Codex")
                         }
                     }
                     .buttonStyle(SidekickActionButtonStyle(tone: .primary, fullWidth: true))
-                    .disabled(appModel.discoveredHost == nil || appModel.isBusyPairing)
+                    .disabled(
+                        appModel.discoveryInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || appModel.pairingCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || appModel.isBusyPairing
+                    )
                 }
             }
         }
@@ -428,7 +413,7 @@ struct PairingView: View {
     }
 
     private var discoveryPlaceholder: String {
-        "your-mac.tailnet.ts.net or http://your-mac.tailnet.ts.net:4231/v1/discover"
+        "your-mac.tailnet.ts.net, 100.x.y.z, or a full /v1/discover URL"
     }
 
     private var urlPlaceholder: String {
@@ -436,7 +421,7 @@ struct PairingView: View {
         case .local:
             return "ws://127.0.0.1:4222"
         case .tailscale:
-            return "ws://your-mac.tailnet.ts.net:4222"
+            return "ws://your-mac.tailnet.ts.net:4222 or ws://100.x.y.z:4222"
         case .manual:
             return "wss://codex.example.com:4222"
         }

@@ -61,9 +61,34 @@ final class AppModel {
         }
     }
 
-    var connectionDraft = ConnectionDraft()
-    var discoveryInput = ""
-    var pairingCodeInput = ""
+    var connectionDraft = ConnectionDraft() {
+        didSet {
+            guard connectionDraft.normalizedWebsocketURL != oldValue.normalizedWebsocketURL
+                    || connectionDraft.normalizedAuthToken != oldValue.normalizedAuthToken else {
+                return
+            }
+            clearRetryState(resetDiscoveredHost: false, resetPairingCode: false)
+        }
+    }
+    var discoveryInput = "" {
+        didSet {
+            guard discoveryInput != oldValue else {
+                return
+            }
+            clearRetryState(resetDiscoveredHost: true, resetPairingCode: true)
+        }
+    }
+    var pairingCodeInput = "" {
+        didSet {
+            guard pairingCodeInput != oldValue else {
+                return
+            }
+            pairingErrorMessage = nil
+            if case .failed = connectionState {
+                connectionState = .disconnected
+            }
+        }
+    }
     var discoveredHost: PairingDiscoveryRecord?
     var pairedConnection: StoredPairing?
     var connectionState: ConnectionState = .disconnected
@@ -223,12 +248,12 @@ final class AppModel {
     func discoverHost() async {
         let discoveryTarget = discoveryInput
         guard !discoveryTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            pairingErrorMessage = "Enter a `.ts.net` host or full discovery URL."
+            pairingErrorMessage = "Enter a `.ts.net` host, a Tailscale IP, or a full discovery URL."
             return
         }
 
         isDiscoveringHost = true
-        pairingErrorMessage = nil
+        clearRetryState(resetDiscoveredHost: true, resetPairingCode: false)
         defer { isDiscoveringHost = false }
 
         do {
@@ -238,6 +263,42 @@ final class AppModel {
             if connectionDraft.normalizedAuthToken.isEmpty {
                 connectionDraft.authToken = ""
             }
+        } catch {
+            pairingErrorMessage = error.localizedDescription
+        }
+    }
+
+    func pairWithDiscoveryCode() async {
+        let discoveryTarget = discoveryInput
+        guard !discoveryTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            pairingErrorMessage = "Enter a `.ts.net` host, a Tailscale IP, or a full discovery URL."
+            return
+        }
+
+        let code = pairingCodeInput
+        guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            pairingErrorMessage = "Enter the short pairing code from the host."
+            return
+        }
+
+        isDiscoveringHost = true
+        isClaimingPairing = true
+        clearRetryState(resetDiscoveredHost: true, resetPairingCode: false)
+        defer {
+            isDiscoveringHost = false
+            isClaimingPairing = false
+        }
+
+        do {
+            let discoveredHost = try await pairingBrokerClient.discover(from: discoveryTarget)
+            self.discoveredHost = discoveredHost
+            connectionDraft = try await pairingBrokerClient.claim(
+                discovery: discoveredHost,
+                code: code
+            )
+            connectionState = .disconnected
+            await connect()
+            pairingCodeInput = ""
         } catch {
             pairingErrorMessage = error.localizedDescription
         }
@@ -276,10 +337,11 @@ final class AppModel {
         do {
             let payload = try PairingLink.parse(rawValue)
             discoveryInput = payload.discoveryURL
-            await discoverHost()
             if let code = payload.code, !code.isEmpty {
                 pairingCodeInput = code
-                await claimDiscoveredHost()
+                await pairWithDiscoveryCode()
+            } else {
+                await discoverHost()
             }
         } catch {
             pairingErrorMessage = error.localizedDescription
@@ -735,5 +797,19 @@ final class AppModel {
 
     private func persistAppearance() {
         try? appearanceStore.save(appearanceSettings)
+    }
+
+    private func clearRetryState(resetDiscoveredHost: Bool, resetPairingCode: Bool) {
+        pairingErrorMessage = nil
+        bannerMessage = nil
+        if case .failed = connectionState {
+            connectionState = .disconnected
+        }
+        if resetDiscoveredHost {
+            discoveredHost = nil
+        }
+        if resetPairingCode {
+            pairingCodeInput = ""
+        }
     }
 }

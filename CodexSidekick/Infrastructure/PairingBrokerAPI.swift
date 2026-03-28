@@ -46,9 +46,9 @@ enum PairingBrokerError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyInput:
-            return "Enter a Tailscale host or discovery URL first."
+            return "Enter a Tailscale host, Tailscale IP, or discovery URL first."
         case .invalidDiscoveryURL:
-            return "That discovery target is not valid. Use a `.ts.net` host or a full `/v1/discover` URL."
+            return "That discovery target is not valid. Use a `.ts.net` host, a Tailscale IP, or a full `/v1/discover` URL."
         case .invalidCode:
             return "Enter the 8-character pairing code from the host."
         case .discoveryFailed(let message), .claimFailed(let message):
