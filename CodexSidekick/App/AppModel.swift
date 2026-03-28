@@ -207,6 +207,16 @@ final class AppModel {
         await connect()
     }
 
+    func importPairingArtifact(_ rawValue: String) async {
+        do {
+            connectionDraft = try PairingArtifact.connectionDraft(from: rawValue)
+            connectionState = .disconnected
+            await connect()
+        } catch {
+            connectionState = .failed(error.localizedDescription)
+        }
+    }
+
     func forgetPairing() async {
         await disconnectTransport()
         try? pairingStore.clear()

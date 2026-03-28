@@ -25,11 +25,18 @@ The app currently supports three connection paths:
 Tailscale pairing uses the host's `.ts.net` name or Tailscale IP and requires a
 bearer token from the host.
 
+The app also supports quick import:
+
+- paste a `codex-sidekick:v1:...` pairing code from the desktop plugin
+- open a `codexsidekick://pair?...` link
+- scan a QR image that carries that same app link
+
 ## Companion plugin
 
 The recommended desktop-side pairing flow lives in the companion repository
 `codex-sidekick-plugin`, which prepares a Tailscale-capable `codex app-server`
-listener and emits a ready-to-enter pairing payload for the phone.
+listener and can emit either a pairing code or a QR-ready deep link for the
+phone.
 
 ## Build
 

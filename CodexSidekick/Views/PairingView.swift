@@ -5,6 +5,7 @@ struct PairingView: View {
     @Environment(\.sidekickTheme) private var theme
 
     @Bindable var appModel: AppModel
+    @State private var pairingArtifactInput = ""
 
     private enum PairingMode: String, CaseIterable, Identifiable {
         case local
@@ -134,6 +135,8 @@ struct PairingView: View {
                         .foregroundStyle(theme.textSecondary)
                 }
 
+                quickImportSection
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Connection Path")
                         .font(theme.codeFont(10, weight: .semibold))
@@ -231,6 +234,39 @@ struct PairingView: View {
                         tone: .neutral
                     )
                 }
+            }
+        }
+    }
+
+    private var quickImportSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Quick Import")
+                .font(theme.codeFont(10, weight: .semibold))
+                .foregroundStyle(theme.textTertiary)
+
+            Text("Paste a pairing code from the desktop plugin, or scan a QR code that opens this app. The phone will import the endpoint and token together.")
+                .font(theme.font(12))
+                .foregroundStyle(theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextField("codex-sidekick:v1:...", text: $pairingArtifactInput, axis: .vertical)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .lineLimit(2...4)
+                .sidekickInputFieldStyle()
+
+            HStack(spacing: 8) {
+                Button {
+                    let artifact = pairingArtifactInput
+                    Task {
+                        await appModel.importPairingArtifact(artifact)
+                        pairingArtifactInput = ""
+                    }
+                } label: {
+                    Text("Import & Pair")
+                }
+                .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
+                .disabled(pairingArtifactInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || appModel.isConnecting)
             }
         }
     }

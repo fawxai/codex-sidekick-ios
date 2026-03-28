@@ -10,6 +10,11 @@ struct CodexSidekickApp: App {
                 .task {
                     await appModel.bootstrap()
                 }
+                .onOpenURL { url in
+                    Task {
+                        await appModel.importPairingArtifact(url.absoluteString)
+                    }
+                }
         }
     }
 }

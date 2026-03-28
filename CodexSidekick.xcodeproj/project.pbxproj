@@ -16,6 +16,7 @@
 		5D58AAC716AA79E666C61D24 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8DACED918A9023440F7BC222 /* LaunchScreen.storyboard */; };
 		651148FC17B6865419764764 /* AppearanceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120ACF35A89A38B881EFEDCD /* AppearanceStore.swift */; };
 		67B5B603B59BCFEE6F9C0BEE /* CodexTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F73ED61FAAE27FE4B7312B /* CodexTransport.swift */; };
+		8D853E855481F35138862F05 /* PairingArtifact.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1B541DA0A348BBB5B8E9CC /* PairingArtifact.swift */; };
 		982D2E0DCD0E889A5D358EE2 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA40D282BA42D9DF5D02A68 /* PairingView.swift */; };
 		AE88502F8B8189A99E556B61 /* SidekickScrollScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC7BCB743293CD7CD4B6F95 /* SidekickScrollScreen.swift */; };
 		B8C0ED542DF4B4260572846B /* JSONRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EF8DECE1DB42C3BCE6D3BF3 /* JSONRPC.swift */; };
@@ -38,7 +39,9 @@
 		25266DF58445C7B6CC7B9B98 /* ThreadTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadTimelineView.swift; sourceTree = "<group>"; };
 		26452B0637A38CE5290F3C24 /* SidekickHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidekickHomeView.swift; sourceTree = "<group>"; };
 		2FCA6B75FDDBAE8E606FD399 /* CodexSidekickApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexSidekickApp.swift; sourceTree = "<group>"; };
+		3079677C3573086951C314DC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3E17BF788E737F5BF8B2975B /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		5D1B541DA0A348BBB5B8E9CC /* PairingArtifact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingArtifact.swift; sourceTree = "<group>"; };
 		767A7CCB7495F39D242439C6 /* ApprovalInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalInboxView.swift; sourceTree = "<group>"; };
 		7EF8DECE1DB42C3BCE6D3BF3 /* JSONRPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONRPC.swift; sourceTree = "<group>"; };
 		84C4B50312C299C09854A827 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -78,6 +81,7 @@
 				08F73ED61FAAE27FE4B7312B /* CodexTransport.swift */,
 				924EEECBCC939723AD3C035E /* ConnectionEndpoint.swift */,
 				7EF8DECE1DB42C3BCE6D3BF3 /* JSONRPC.swift */,
+				5D1B541DA0A348BBB5B8E9CC /* PairingArtifact.swift */,
 				8EFFBB9586ABE060BB1088C2 /* PairingStore.swift */,
 			);
 			path = Infrastructure;
@@ -102,6 +106,7 @@
 		7D289EB8AAFB2AEA57A2D6DA /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				3079677C3573086951C314DC /* Info.plist */,
 				8DACED918A9023440F7BC222 /* LaunchScreen.storyboard */,
 			);
 			path = Resources;
@@ -216,6 +221,7 @@
 				5B4C729869C4B8798A7D8E74 /* ConnectionEndpoint.swift in Sources */,
 				C49DA7AAA5C719CFFD319886 /* DisplayPrimitives.swift in Sources */,
 				B8C0ED542DF4B4260572846B /* JSONRPC.swift in Sources */,
+				8D853E855481F35138862F05 /* PairingArtifact.swift in Sources */,
 				19848E593A968AB7DAFA4026 /* PairingStore.swift in Sources */,
 				982D2E0DCD0E889A5D358EE2 /* PairingView.swift in Sources */,
 				BD9BCFFBC10690DB0BBFCB42 /* RootView.swift in Sources */,
@@ -239,22 +245,8 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Codex Sidekick";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = (
-					UIInterfaceOrientationPortrait,
-					UIInterfaceOrientationPortraitUpsideDown,
-					UIInterfaceOrientationLandscapeLeft,
-					UIInterfaceOrientationLandscapeRight,
-				);
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = (
-					UIInterfaceOrientationPortrait,
-					UIInterfaceOrientationLandscapeLeft,
-					UIInterfaceOrientationLandscapeRight,
-				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CodexSidekick/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -335,22 +327,8 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Codex Sidekick";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = (
-					UIInterfaceOrientationPortrait,
-					UIInterfaceOrientationPortraitUpsideDown,
-					UIInterfaceOrientationLandscapeLeft,
-					UIInterfaceOrientationLandscapeRight,
-				);
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = (
-					UIInterfaceOrientationPortrait,
-					UIInterfaceOrientationLandscapeLeft,
-					UIInterfaceOrientationLandscapeRight,
-				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CodexSidekick/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
