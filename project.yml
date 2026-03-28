@@ -23,7 +23,7 @@ targets:
       - path: CodexSidekick
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openai.codex-sidekick
+        PRODUCT_BUNDLE_IDENTIFIER: com.fawxai.codex-sidekick
         PRODUCT_NAME: CodexSidekick
         GENERATE_INFOPLIST_FILE: YES
         CURRENT_PROJECT_VERSION: 1

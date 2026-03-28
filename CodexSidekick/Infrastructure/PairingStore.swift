@@ -29,7 +29,7 @@ struct PairingStore {
     private let defaultsKey = "codex.sidekick.pairing"
     private let defaults = UserDefaults.standard
     private let keychain = KeychainStore(
-        service: "com.openai.codex-sidekick",
+        service: "com.fawxai.codex-sidekick",
         account: "remote-auth-token"
     )
 
