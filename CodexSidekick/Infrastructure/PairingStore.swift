@@ -4,13 +4,21 @@ import Security
 struct StoredPairing: Codable, Sendable {
     let websocketURL: String
 
+    var endpointKind: SidekickConnectionEndpointKind {
+        guard let url = URL(string: websocketURL) else {
+            return .invalid
+        }
+        return SidekickConnectionEndpointKind(url: url)
+    }
+
     var suggestedDiscoveryTarget: String {
-        guard var components = URLComponents(string: websocketURL),
+        guard let url = URL(string: websocketURL),
+              var components = URLComponents(string: websocketURL),
               let host = components.host else {
             return ""
         }
 
-        if host.hasSuffix(".ts.net") || host == "localhost" || host == "127.0.0.1" {
+        if endpointKind == .tailnet || endpointKind == .local || host == "localhost" || host == "127.0.0.1" {
             components.scheme = "http"
             components.port = 4231
             components.path = "/v1/discover"

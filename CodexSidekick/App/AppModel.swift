@@ -73,6 +73,34 @@ final class AppModel {
         }
     }
 
+    var connectionDraft = ConnectionDraft() {
+        didSet {
+            guard connectionDraft.normalizedWebsocketURL != oldValue.normalizedWebsocketURL
+                    || connectionDraft.normalizedAuthToken != oldValue.normalizedAuthToken else {
+                return
+            }
+            clearRetryState(resetDiscoveredHost: false, resetPairingCode: false)
+        }
+    }
+    var discoveryInput = "" {
+        didSet {
+            guard discoveryInput != oldValue else {
+                return
+            }
+            clearRetryState(resetDiscoveredHost: true, resetPairingCode: true)
+        }
+    }
+    var pairingCodeInput = "" {
+        didSet {
+            guard pairingCodeInput != oldValue else {
+                return
+            }
+            pairingErrorMessage = nil
+            if case .failed = connectionState {
+                connectionState = .disconnected
+            }
+        }
+    }
     struct ThreadListContext: Sendable {
         var sortKey: ThreadSortKey = .updatedAt
         var cwd: String?
@@ -97,10 +125,6 @@ final class AppModel {
 
     static let planModePrompt =
         "Plan mode is enabled. Start with a concise step-by-step plan before taking action."
-
-    var connectionDraft = ConnectionDraft()
-    var discoveryInput = ""
-    var pairingCodeInput = ""
     var discoveredHost: PairingDiscoveryRecord?
     var pairedConnection: StoredPairing?
     var connectionState: ConnectionState = .disconnected
@@ -205,12 +229,18 @@ final class AppModel {
             return
         }
 
-        pairedConnection = restored.stored
         connectionDraft = ConnectionDraft(
             websocketURL: restored.stored.websocketURL,
             authToken: restored.token ?? ""
         )
         discoveryInput = restored.stored.suggestedDiscoveryTarget
+
+        if restored.stored.endpointKind == .local {
+            try? pairingStore.clear()
+            return
+        }
+
+        pairedConnection = restored.stored
         await connect()
     }
 
@@ -284,32 +314,10 @@ final class AppModel {
         await connect()
     }
 
-    func discoverHost() async {
+    func pairWithDiscoveryCode() async {
         let discoveryTarget = discoveryInput
         guard !discoveryTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            pairingErrorMessage = "Enter a `.ts.net` host or full discovery URL."
-            return
-        }
-
-        isDiscoveringHost = true
-        pairingErrorMessage = nil
-        defer { isDiscoveringHost = false }
-
-        do {
-            let discoveredHost = try await pairingBrokerClient.discover(from: discoveryTarget)
-            self.discoveredHost = discoveredHost
-            connectionDraft.websocketURL = discoveredHost.websocketURL
-            if connectionDraft.normalizedAuthToken.isEmpty {
-                connectionDraft.authToken = ""
-            }
-        } catch {
-            pairingErrorMessage = error.localizedDescription
-        }
-    }
-
-    func claimDiscoveredHost() async {
-        guard let discoveredHost else {
-            pairingErrorMessage = "Discover a Codex host before entering a pairing code."
+            pairingErrorMessage = "Enter a `.ts.net` host, a Tailscale IP, or a full discovery URL."
             return
         }
 
@@ -319,15 +327,21 @@ final class AppModel {
             return
         }
 
+        isDiscoveringHost = true
         isClaimingPairing = true
-        pairingErrorMessage = nil
-        defer { isClaimingPairing = false }
+        clearRetryState(resetDiscoveredHost: false, resetPairingCode: false)
+        defer {
+            isDiscoveringHost = false
+            isClaimingPairing = false
+        }
 
         do {
-            connectionDraft = try await pairingBrokerClient.claim(
-                discovery: discoveredHost,
+            let bootstrap = try await pairingBrokerClient.redeemDiscoveryCode(
+                from: discoveryTarget,
                 code: code
             )
+            discoveredHost = bootstrap.discovery
+            connectionDraft = bootstrap.draft
             connectionState = .disconnected
             await connect()
             pairingCodeInput = ""
@@ -340,10 +354,20 @@ final class AppModel {
         do {
             let payload = try PairingLink.parse(rawValue)
             discoveryInput = payload.discoveryURL
-            await discoverHost()
             if let code = payload.code, !code.isEmpty {
                 pairingCodeInput = code
-                await claimDiscoveredHost()
+                await pairWithDiscoveryCode()
+            } else {
+                isDiscoveringHost = true
+                clearRetryState(resetDiscoveredHost: false, resetPairingCode: false)
+                defer { isDiscoveringHost = false }
+
+                let discoveredHost = try await pairingBrokerClient.discover(from: payload.discoveryURL)
+                self.discoveredHost = discoveredHost
+                connectionDraft.websocketURL = discoveredHost.websocketURL
+                if connectionDraft.normalizedAuthToken.isEmpty {
+                    connectionDraft.authToken = ""
+                }
             }
         } catch {
             pairingErrorMessage = error.localizedDescription
@@ -968,6 +992,20 @@ final class AppModel {
 
     private func persistAppearance() {
         try? appearanceStore.save(appearanceSettings)
+    }
+
+    private func clearRetryState(resetDiscoveredHost: Bool, resetPairingCode: Bool) {
+        pairingErrorMessage = nil
+        banner = nil
+        if case .failed = connectionState {
+            connectionState = .disconnected
+        }
+        if resetDiscoveredHost {
+            discoveredHost = nil
+        }
+        if resetPairingCode {
+            pairingCodeInput = ""
+        }
     }
 
     private func showBanner(_ message: String, tone: Banner.Tone) {

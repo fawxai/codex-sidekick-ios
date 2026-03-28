@@ -1,17 +1,15 @@
 import Darwin
 import Foundation
 
-enum SidekickConnectionEndpointKind: Equatable {
+enum SidekickHostKind: Equatable {
     case local
-    case tailnet
+    case tailnetHost
+    case tailnetIP
     case remote
     case invalid
 
-    init(url: URL) {
-        guard let scheme = url.scheme?.lowercased(),
-              scheme == "ws" || scheme == "wss",
-              let host = url.host?.lowercased(),
-              !host.isEmpty else {
+    init(host: String?) {
+        guard let host = host?.lowercased(), !host.isEmpty else {
             self = .invalid
             return
         }
@@ -21,7 +19,109 @@ enum SidekickConnectionEndpointKind: Equatable {
             return
         }
 
-        if Self.isTailnetHost(host) {
+        if host.hasSuffix(".ts.net") {
+            self = .tailnetHost
+            return
+        }
+
+        if Self.isTailnetIPAddress(host) {
+            self = .tailnetIP
+            return
+        }
+
+        self = .remote
+    }
+
+    var isTailnet: Bool {
+        switch self {
+        case .tailnetHost, .tailnetIP:
+            return true
+        case .local, .remote, .invalid:
+            return false
+        }
+    }
+
+    var allowsCleartextDiscovery: Bool {
+        switch self {
+        case .local, .tailnetHost, .tailnetIP:
+            return true
+        case .remote, .invalid:
+            return false
+        }
+    }
+
+    var requiresSocketBootstrapTransport: Bool {
+        self == .tailnetIP
+    }
+
+    private static func isLocalHost(_ host: String) -> Bool {
+        if host == "localhost" {
+            return true
+        }
+
+        if let address = parseIPv4(host) {
+            return (address & 0xFF00_0000) == 0x7F00_0000
+        }
+
+        if let bytes = parseIPv6(host) {
+            return bytes.dropLast().allSatisfy({ $0 == 0 }) && bytes.last == 1
+        }
+
+        return false
+    }
+
+    private static func isTailnetIPAddress(_ host: String) -> Bool {
+        if let address = parseIPv4(host) {
+            return (address & 0xFFC0_0000) == 0x6440_0000
+        }
+
+        if let bytes = parseIPv6(host) {
+            return Array(bytes.prefix(6)) == [0xFD, 0x7A, 0x11, 0x5C, 0xA1, 0xE0]
+        }
+
+        return false
+    }
+
+    private static func parseIPv4(_ host: String) -> UInt32? {
+        var address = in_addr()
+        let parsed = host.withCString { inet_pton(AF_INET, $0, &address) }
+        guard parsed == 1 else {
+            return nil
+        }
+        return UInt32(bigEndian: address.s_addr)
+    }
+
+    private static func parseIPv6(_ host: String) -> [UInt8]? {
+        var address = in6_addr()
+        let parsed = host.withCString { inet_pton(AF_INET6, $0, &address) }
+        guard parsed == 1 else {
+            return nil
+        }
+        return withUnsafeBytes(of: &address) { Array($0) }
+    }
+}
+
+enum SidekickConnectionEndpointKind: Equatable {
+    case local
+    case tailnet
+    case remote
+    case invalid
+
+    init(url: URL) {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "ws" || scheme == "wss",
+              SidekickHostKind(host: url.host) != .invalid else {
+            self = .invalid
+            return
+        }
+
+        let hostKind = SidekickHostKind(host: url.host)
+        if hostKind == .local {
+            self = .local
+            return
+        }
+
+        if hostKind.isTailnet {
             self = .tailnet
             return
         }
@@ -72,55 +172,5 @@ enum SidekickConnectionEndpointKind: Equatable {
         case .invalid:
             false
         }
-    }
-
-    private static func isLocalHost(_ host: String) -> Bool {
-        if host == "localhost" {
-            return true
-        }
-
-        if let address = parseIPv4(host) {
-            return (address & 0xFF00_0000) == 0x7F00_0000
-        }
-
-        if let bytes = parseIPv6(host) {
-            return bytes.dropLast().allSatisfy({ $0 == 0 }) && bytes.last == 1
-        }
-
-        return false
-    }
-
-    private static func isTailnetHost(_ host: String) -> Bool {
-        if host.hasSuffix(".ts.net") {
-            return true
-        }
-
-        if let address = parseIPv4(host) {
-            return (address & 0xFFC0_0000) == 0x6440_0000
-        }
-
-        if let bytes = parseIPv6(host) {
-            return Array(bytes.prefix(6)) == [0xFD, 0x7A, 0x11, 0x5C, 0xA1, 0xE0]
-        }
-
-        return false
-    }
-
-    private static func parseIPv4(_ host: String) -> UInt32? {
-        var address = in_addr()
-        let parsed = host.withCString { inet_pton(AF_INET, $0, &address) }
-        guard parsed == 1 else {
-            return nil
-        }
-        return UInt32(bigEndian: address.s_addr)
-    }
-
-    private static func parseIPv6(_ host: String) -> [UInt8]? {
-        var address = in6_addr()
-        let parsed = host.withCString { inet_pton(AF_INET6, $0, &address) }
-        guard parsed == 1 else {
-            return nil
-        }
-        return withUnsafeBytes(of: &address) { Array($0) }
     }
 }
