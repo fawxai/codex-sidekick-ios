@@ -8,6 +8,21 @@ enum StatusTone {
     case danger
 }
 
+extension AppModel.Banner.Tone {
+    var statusTone: StatusTone {
+        switch self {
+        case .neutral:
+            return .neutral
+        case .warning:
+            return .warning
+        case .danger:
+            return .danger
+        case .success:
+            return .success
+        }
+    }
+}
+
 enum SidekickSection: String, CaseIterable, Identifiable {
     case threads
     case approvals

@@ -15,6 +15,7 @@ enum CodexNotificationEvent: Sendable {
     case threadStarted(ThreadStartedNotification)
     case threadStatusChanged(ThreadStatusChangedNotification)
     case threadNameUpdated(ThreadNameUpdatedNotification)
+    case threadTokenUsageUpdated(ThreadTokenUsageUpdatedNotification)
     case threadArchived(ThreadArchivedNotification)
     case threadUnarchived(ThreadUnarchivedNotification)
     case turnStarted(TurnStartedNotification)
@@ -23,6 +24,7 @@ enum CodexNotificationEvent: Sendable {
     case itemCompleted(ItemCompletedNotification)
     case agentMessageDelta(AgentMessageDeltaNotification)
     case serverRequestResolved(ServerRequestResolvedNotification)
+    case accountRateLimitsUpdated(AccountRateLimitsUpdatedNotification)
 }
 
 enum CodexServerRequestEvent: Sendable {
@@ -145,6 +147,33 @@ actor CodexTransport {
         return try rawResult.decoded(as: Response.self, using: decoder)
     }
 
+    func request<Response: Decodable>(
+        method: String,
+        as type: Response.Type
+    ) async throws -> Response {
+        let requestID = RPCID.integer(nextRequestID)
+        nextRequestID += 1
+
+        let rawResult: JSONValue = try await withCheckedThrowingContinuation { continuation in
+            pendingResponses[requestID] = continuation
+            Task {
+                do {
+                    try await self.send(
+                        JSONRPCRequestEnvelope<JSONValue?>(
+                            id: requestID,
+                            method: method,
+                            params: nil
+                        )
+                    )
+                } catch {
+                    self.failPendingResponse(id: requestID, error: error)
+                }
+            }
+        }
+
+        return try rawResult.decoded(as: Response.self, using: decoder)
+    }
+
     func notify(method: String) async throws {
         try await send(JSONRPCNotificationEnvelope<JSONValue?>(method: method, params: nil))
     }
@@ -241,6 +270,9 @@ actor CodexTransport {
         case "thread/name/updated":
             let notification = try decodeParams(ThreadNameUpdatedNotification.self, from: params)
             eventContinuation?.yield(.notification(.threadNameUpdated(notification)))
+        case "thread/tokenUsage/updated":
+            let notification = try decodeParams(ThreadTokenUsageUpdatedNotification.self, from: params)
+            eventContinuation?.yield(.notification(.threadTokenUsageUpdated(notification)))
         case "thread/archived":
             let notification = try decodeParams(ThreadArchivedNotification.self, from: params)
             eventContinuation?.yield(.notification(.threadArchived(notification)))
@@ -265,6 +297,9 @@ actor CodexTransport {
         case "serverRequest/resolved":
             let notification = try decodeParams(ServerRequestResolvedNotification.self, from: params)
             eventContinuation?.yield(.notification(.serverRequestResolved(notification)))
+        case "account/rateLimits/updated":
+            let notification = try decodeParams(AccountRateLimitsUpdatedNotification.self, from: params)
+            eventContinuation?.yield(.notification(.accountRateLimitsUpdated(notification)))
         default:
             break
         }

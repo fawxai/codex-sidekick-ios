@@ -4,6 +4,18 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
+    struct Banner: Equatable, Sendable {
+        enum Tone: Equatable, Sendable {
+            case neutral
+            case warning
+            case danger
+            case success
+        }
+
+        let message: String
+        let tone: Tone
+    }
+
     enum ConnectionState: Equatable {
         case disconnected
         case connecting
@@ -89,6 +101,30 @@ final class AppModel {
             }
         }
     }
+    struct ThreadListContext: Sendable {
+        var sortKey: ThreadSortKey = .updatedAt
+        var cwd: String?
+    }
+
+    enum PermissionPreset: Equatable, Sendable {
+        case defaultPermissions
+        case fullAccess
+        case customConfig
+
+        var label: String {
+            switch self {
+            case .defaultPermissions:
+                return "Default permissions"
+            case .fullAccess:
+                return "Full access"
+            case .customConfig:
+                return "Custom"
+            }
+        }
+    }
+
+    static let planModePrompt =
+        "Plan mode is enabled. Start with a concise step-by-step plan before taking action."
     var discoveredHost: PairingDiscoveryRecord?
     var pairedConnection: StoredPairing?
     var connectionState: ConnectionState = .disconnected
@@ -100,10 +136,17 @@ final class AppModel {
     var pendingApprovals: [PendingApproval] = []
     var appearanceSettings = SidekickAppearanceSettings()
     var hostAppearance = HostAppearanceSnapshot(themeName: nil)
+    var hostModelName: String?
+    var hostModelProviderName: String?
+    var hostReasoningEffortName: String?
+    var hostSandboxModeName: String?
+    var hostApprovalPolicyValue: JSONValue?
+    var accountRateLimits: RateLimitSnapshot?
+    var threadTokenUsageByThreadID: [String: ThreadTokenUsage] = [:]
     var isBootstrapping = false
     var isDiscoveringHost = false
     var isClaimingPairing = false
-    var bannerMessage: String?
+    var banner: Banner?
     var pairingErrorMessage: String?
 
     private let pairingStore = PairingStore()
@@ -111,6 +154,7 @@ final class AppModel {
     private let appearanceStore = AppearanceStore()
     private var transport: CodexTransport?
     private var eventTask: Task<Void, Never>?
+    private var threadListContext = ThreadListContext()
 
     var hasSavedPairing: Bool {
         pairedConnection != nil
@@ -153,6 +197,24 @@ final class AppModel {
             return pairedConnection?.websocketURL ?? "Unpaired"
         }
         return host
+    }
+
+    var hostPermissionPreset: PermissionPreset {
+        let normalizedSandboxMode = hostSandboxModeName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let approvalPolicyValue = hostApprovalPolicyValue
+
+        if normalizedSandboxMode == nil, approvalPolicyValue == nil {
+            return .defaultPermissions
+        }
+
+        if normalizedSandboxMode == "danger-full-access",
+           approvalPolicyValue?.stringValue?.lowercased() == "never" {
+            return .fullAccess
+        }
+
+        return .customConfig
     }
 
     func bootstrap() async {
@@ -219,7 +281,7 @@ final class AppModel {
 
         await disconnectTransport()
         connectionState = .connecting
-        bannerMessage = nil
+        banner = nil
         pairingErrorMessage = nil
 
         do {
@@ -238,7 +300,8 @@ final class AppModel {
             self.connectionState = .connected
             startListening(to: eventStream)
             await refreshThreads()
-            await refreshHostAppearance()
+            await refreshHostConfigSnapshot()
+            await refreshAccountRateLimits()
         } catch {
             self.connectionState = .failed(error.localizedDescription)
         }
@@ -321,23 +384,38 @@ final class AppModel {
         selectedThreadID = nil
         pendingApprovals = []
         hostAppearance = HostAppearanceSnapshot(themeName: nil)
+        hostModelName = nil
+        hostModelProviderName = nil
+        hostReasoningEffortName = nil
+        hostSandboxModeName = nil
+        hostApprovalPolicyValue = nil
+        accountRateLimits = nil
+        threadTokenUsageByThreadID = [:]
         connectionState = .disconnected
-        bannerMessage = nil
+        banner = nil
         pairingErrorMessage = nil
         connectionDraft.authToken = ""
     }
 
-    func refreshThreads() async {
+    func refreshThreads(using context: ThreadListContext? = nil) async {
         guard let transport else { return }
+
+        if let context {
+            threadListContext = context
+        }
 
         do {
             let response: ThreadListResponse = try await transport.request(
                 method: "thread/list",
-                params: ThreadListParams(archived: false),
+                params: ThreadListParams(
+                    sortKey: threadListContext.sortKey,
+                    archived: false,
+                    cwd: threadListContext.cwd
+                ),
                 as: ThreadListResponse.self
             )
             let visibleThreadIDs = Set(response.data.map(\.id))
-            threads = response.data.sorted(by: { $0.updatedAt > $1.updatedAt })
+            threads = response.data
             threadDetails = threadDetails.filter { visibleThreadIDs.contains($0.key) }
             if let selectedThreadID,
                threads.contains(where: { $0.id == selectedThreadID }) == false {
@@ -346,20 +424,23 @@ final class AppModel {
                 selectedThreadID = threads.first?.id
             }
         } catch {
-            bannerMessage = "Could not load threads: \(error.localizedDescription)"
+            showBanner(
+                "Could not load threads: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
-    func createThread() async -> String? {
+    func createThread(cwd: String? = nil) async -> String? {
         guard let transport else {
-            bannerMessage = "Connect to Codex before starting a thread."
+            showBanner("Connect to Codex before starting a thread.", tone: .warning)
             return nil
         }
 
         do {
             let response: ThreadStartResponse = try await transport.request(
                 method: "thread/start",
-                params: ThreadStartParams(),
+                params: ThreadStartParams(cwd: cwd),
                 as: ThreadStartResponse.self
             )
             storeThread(response.thread)
@@ -367,7 +448,10 @@ final class AppModel {
             await readThread(response.thread.id, force: true)
             return response.thread.id
         } catch {
-            bannerMessage = "Could not start a new thread: \(error.localizedDescription)"
+            showBanner(
+                "Could not start a new thread: \(error.localizedDescription)",
+                tone: .danger
+            )
             return nil
         }
     }
@@ -394,7 +478,10 @@ final class AppModel {
             )
             storeThread(response.thread)
         } catch {
-            bannerMessage = "Could not open thread: \(error.localizedDescription)"
+            showBanner(
+                "Could not open thread: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -403,7 +490,10 @@ final class AppModel {
         do {
             try await resumeThread(selectedThreadID)
         } catch {
-            bannerMessage = "Could not open live thread: \(error.localizedDescription)"
+            showBanner(
+                "Could not open live thread: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -411,6 +501,12 @@ final class AppModel {
         guard let selectedThreadID else { return }
         let text = handoffDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        await sendHandoff(input: [.text(text)])
+    }
+
+    func sendHandoff(input: [UserInputPayload]) async {
+        guard let selectedThreadID else { return }
+        guard !input.isEmpty else { return }
         guard let transport else { return }
 
         do {
@@ -419,15 +515,64 @@ final class AppModel {
                 method: "turn/start",
                 params: TurnStartParams(
                     threadId: selectedThreadID,
-                    input: [.text(text)]
+                    input: input
                 ),
                 as: TurnStartResponse.self
             )
             replaceTurn(threadID: selectedThreadID, turn: response.turn)
             handoffDraft = ""
         } catch {
-            bannerMessage = "Could not send handoff: \(error.localizedDescription)"
+            showBanner(
+                "Could not send handoff: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
+    }
+
+    func setHostModel(_ model: String) async {
+        await writeConfigEdit(
+            keyPath: "model",
+            value: .string(model)
+        )
+    }
+
+    func setHostReasoningEffort(_ effort: String) async {
+        await writeConfigEdit(
+            keyPath: "model_reasoning_effort",
+            value: .string(effort)
+        )
+    }
+
+    func setHostPermissionPreset(_ preset: PermissionPreset) async {
+        switch preset {
+        case .defaultPermissions:
+            await writeConfigEdits([
+                ConfigEdit(keyPath: "sandbox_mode", value: .null, mergeStrategy: .replace),
+                ConfigEdit(keyPath: "approval_policy", value: .null, mergeStrategy: .replace)
+            ])
+        case .fullAccess:
+            await writeConfigEdits([
+                ConfigEdit(
+                    keyPath: "sandbox_mode",
+                    value: .string("danger-full-access"),
+                    mergeStrategy: .replace
+                ),
+                ConfigEdit(
+                    keyPath: "approval_policy",
+                    value: .string("never"),
+                    mergeStrategy: .replace
+                )
+            ])
+        case .customConfig:
+            showBanner(
+                "Custom permission mode is managed by the host config.",
+                tone: .neutral
+            )
+        }
+    }
+
+    func threadTokenUsage(for threadID: String) -> ThreadTokenUsage? {
+        threadTokenUsageByThreadID[threadID]
     }
 
     func approveCommand(_ approval: PendingApproval, sessionScope: Bool) async {
@@ -441,7 +586,10 @@ final class AppModel {
             )
             pendingApprovals.removeAll(where: { $0.id == approval.id })
         } catch {
-            bannerMessage = "Could not respond to approval: \(error.localizedDescription)"
+            showBanner(
+                "Could not respond to approval: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -456,7 +604,10 @@ final class AppModel {
             )
             pendingApprovals.removeAll(where: { $0.id == approval.id })
         } catch {
-            bannerMessage = "Could not respond to approval: \(error.localizedDescription)"
+            showBanner(
+                "Could not respond to approval: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -471,7 +622,10 @@ final class AppModel {
             )
             pendingApprovals.removeAll(where: { $0.id == approval.id })
         } catch {
-            bannerMessage = "Could not respond to approval: \(error.localizedDescription)"
+            showBanner(
+                "Could not respond to approval: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -486,7 +640,10 @@ final class AppModel {
             )
             pendingApprovals.removeAll(where: { $0.id == approval.id })
         } catch {
-            bannerMessage = "Could not respond to approval: \(error.localizedDescription)"
+            showBanner(
+                "Could not respond to approval: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -496,9 +653,14 @@ final class AppModel {
             ?? "Thread"
     }
 
-    func refreshHostAppearance() async {
+    func refreshHostConfigSnapshot() async {
         guard let transport else {
             hostAppearance = HostAppearanceSnapshot(themeName: nil)
+            hostModelName = nil
+            hostModelProviderName = nil
+            hostReasoningEffortName = nil
+            hostSandboxModeName = nil
+            hostApprovalPolicyValue = nil
             return
         }
 
@@ -509,8 +671,35 @@ final class AppModel {
                 as: ConfigReadResponse.self
             )
             hostAppearance = HostAppearanceSnapshot(themeName: response.config.tuiThemeName)
+            hostModelName = response.config.modelName
+            hostModelProviderName = response.config.modelProviderName
+            hostReasoningEffortName = response.config.reasoningEffortName
+            hostSandboxModeName = response.config.sandboxModeName
+            hostApprovalPolicyValue = response.config.approvalPolicyValue
         } catch {
             hostAppearance = HostAppearanceSnapshot(themeName: nil)
+            hostModelName = nil
+            hostModelProviderName = nil
+            hostReasoningEffortName = nil
+            hostSandboxModeName = nil
+            hostApprovalPolicyValue = nil
+        }
+    }
+
+    func refreshAccountRateLimits() async {
+        guard let transport else {
+            accountRateLimits = nil
+            return
+        }
+
+        do {
+            let response: GetAccountRateLimitsResponse = try await transport.request(
+                method: "account/rateLimits/read",
+                as: GetAccountRateLimitsResponse.self
+            )
+            accountRateLimits = response.rateLimits
+        } catch {
+            accountRateLimits = nil
         }
     }
 
@@ -529,7 +718,7 @@ final class AppModel {
         persistAppearance()
         if isEnabled {
             Task {
-                await refreshHostAppearance()
+                await refreshHostConfigSnapshot()
             }
         }
     }
@@ -567,6 +756,42 @@ final class AppModel {
         connectionState = .connected
     }
 
+    private func writeConfigEdit(keyPath: String, value: JSONValue) async {
+        await writeConfigEdits([
+            ConfigEdit(
+                keyPath: keyPath,
+                value: value,
+                mergeStrategy: .replace
+            )
+        ])
+    }
+
+    private func writeConfigEdits(_ edits: [ConfigEdit]) async {
+        guard let transport else {
+            showBanner("Connect to Codex before updating host settings.", tone: .warning)
+            return
+        }
+
+        do {
+            let _: ConfigWriteResponse = try await transport.request(
+                method: "config/batchWrite",
+                params: ConfigBatchWriteParams(
+                    edits: edits,
+                    filePath: nil,
+                    expectedVersion: nil,
+                    reloadUserConfig: true
+                ),
+                as: ConfigWriteResponse.self
+            )
+            await refreshHostConfigSnapshot()
+        } catch {
+            showBanner(
+                "Could not update host config: \(error.localizedDescription)",
+                tone: .danger
+            )
+        }
+    }
+
     private func startListening(to eventStream: AsyncStream<CodexTransportEvent>) {
         eventTask?.cancel()
         eventTask = Task { [weak self] in
@@ -584,7 +809,7 @@ final class AppModel {
             handle(request)
         case .disconnected(let message):
             connectionState = .failed(message)
-            bannerMessage = "Connection closed"
+            showBanner("Connection closed", tone: .danger)
         }
     }
 
@@ -625,6 +850,8 @@ final class AppModel {
             mutateThread(payload.threadId) { thread in
                 thread.name = payload.threadName
             }
+        case .threadTokenUsageUpdated(let payload):
+            threadTokenUsageByThreadID[payload.threadId] = payload.tokenUsage
         case .threadArchived(let payload):
             removeThread(payload.threadId)
         case .threadUnarchived:
@@ -651,6 +878,8 @@ final class AppModel {
             )
         case .serverRequestResolved(let payload):
             pendingApprovals.removeAll(where: { $0.requestID == payload.requestId })
+        case .accountRateLimitsUpdated(let payload):
+            accountRateLimits = payload.rateLimits
         }
     }
 
@@ -742,7 +971,10 @@ final class AppModel {
             pendingApprovals.insert(approval, at: 0)
         }
         if wasEmpty {
-            bannerMessage = "Approval waiting in \(title(for: approval.threadID))"
+            showBanner(
+                "Approval waiting in \(title(for: approval.threadID))",
+                tone: .warning
+            )
         }
         if selectedThreadID == nil {
             selectedThreadID = approval.threadID
@@ -764,7 +996,7 @@ final class AppModel {
 
     private func clearRetryState(resetDiscoveredHost: Bool, resetPairingCode: Bool) {
         pairingErrorMessage = nil
-        bannerMessage = nil
+        banner = nil
         if case .failed = connectionState {
             connectionState = .disconnected
         }
@@ -774,5 +1006,9 @@ final class AppModel {
         if resetPairingCode {
             pairingCodeInput = ""
         }
+    }
+
+    private func showBanner(_ message: String, tone: Banner.Tone) {
+        banner = Banner(message: message, tone: tone)
     }
 }
