@@ -71,17 +71,20 @@ struct ThreadListParams: Encodable, Sendable {
     var limit: Int?
     var sortKey: ThreadSortKey?
     var archived: Bool?
+    var cwd: String?
 
     init(
         cursor: String? = nil,
         limit: Int? = 40,
         sortKey: ThreadSortKey? = .updatedAt,
-        archived: Bool? = false
+        archived: Bool? = false,
+        cwd: String? = nil
     ) {
         self.cursor = cursor
         self.limit = limit
         self.sortKey = sortKey
         self.archived = archived
+        self.cwd = cwd
     }
 }
 

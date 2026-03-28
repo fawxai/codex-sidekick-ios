@@ -17,6 +17,7 @@
 		651148FC17B6865419764764 /* AppearanceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120ACF35A89A38B881EFEDCD /* AppearanceStore.swift */; };
 		67B5B603B59BCFEE6F9C0BEE /* CodexTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F73ED61FAAE27FE4B7312B /* CodexTransport.swift */; };
 		77DD0574A75DDB4168035CA0 /* PairingLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD9563AE324E798609EC70F5 /* PairingLink.swift */; };
+		84FA639976C4948DA199AA84 /* ThreadBrowserSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18AA28D18E0873E8E02322F8 /* ThreadBrowserSupport.swift */; };
 		982D2E0DCD0E889A5D358EE2 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA40D282BA42D9DF5D02A68 /* PairingView.swift */; };
 		AE88502F8B8189A99E556B61 /* SidekickScrollScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC7BCB743293CD7CD4B6F95 /* SidekickScrollScreen.swift */; };
 		B8C0ED542DF4B4260572846B /* JSONRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EF8DECE1DB42C3BCE6D3BF3 /* JSONRPC.swift */; };
@@ -35,6 +36,7 @@
 		08F73ED61FAAE27FE4B7312B /* CodexTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexTransport.swift; sourceTree = "<group>"; };
 		120ACF35A89A38B881EFEDCD /* AppearanceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceStore.swift; sourceTree = "<group>"; };
 		189B221EB20124C3B742983A /* CodexAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexAPI.swift; sourceTree = "<group>"; };
+		18AA28D18E0873E8E02322F8 /* ThreadBrowserSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadBrowserSupport.swift; sourceTree = "<group>"; };
 		2017D7687522E7C51E0668D9 /* CodexSidekick.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CodexSidekick.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		239119B5D66D9743853BBEE5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		25266DF58445C7B6CC7B9B98 /* ThreadTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadTimelineView.swift; sourceTree = "<group>"; };
@@ -99,6 +101,7 @@
 				84C4B50312C299C09854A827 /* RootView.swift */,
 				239119B5D66D9743853BBEE5 /* SettingsView.swift */,
 				26452B0637A38CE5290F3C24 /* SidekickHomeView.swift */,
+				18AA28D18E0873E8E02322F8 /* ThreadBrowserSupport.swift */,
 				9348FF1BFA613715A7B9F90F /* ThreadBrowserView.swift */,
 				F536CEB5445E4A7B06A5F11E /* ThreadDetailView.swift */,
 				25266DF58445C7B6CC7B9B98 /* ThreadTimelineView.swift */,
@@ -233,6 +236,7 @@
 				C8A60E6A4F1AACD4CB25121B /* SidekickHomeView.swift in Sources */,
 				AE88502F8B8189A99E556B61 /* SidekickScrollScreen.swift in Sources */,
 				D71093E742CD3463C528A5CD /* SidekickTheme.swift in Sources */,
+				84FA639976C4948DA199AA84 /* ThreadBrowserSupport.swift in Sources */,
 				21A8E1466269F9D44EBC8B90 /* ThreadBrowserView.swift in Sources */,
 				4D9422D78CA1CFFA44DC2D9E /* ThreadDetailView.swift in Sources */,
 				E3BD18375E8CD0BB75694D8D /* ThreadTimelineView.swift in Sources */,

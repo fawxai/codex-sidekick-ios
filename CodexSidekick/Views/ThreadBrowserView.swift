@@ -9,9 +9,59 @@ struct ThreadBrowserView: View {
     @Binding var selectedSection: SidekickSection
 
     @State private var compactThreadID: String?
+    @State private var browserPreferences = ThreadBrowserPreferences()
+    @State private var collapsedProjectIDs: Set<String> = []
+    @State private var isPresentingNewThreadSheet = false
+
+    private typealias ThreadCreationCandidate = (target: ThreadCreationTarget, updatedAt: TimeInterval)
 
     private var usesSplitLayout: Bool {
         horizontalSizeClass == .regular
+    }
+
+    private var visibleThreads: [CodexThread] {
+        appModel.threads
+            .filteredForThreadBrowser(show: browserPreferences.show, selectedThreadID: appModel.selectedThreadID)
+            .sortedForThreadBrowser(by: browserPreferences.sort)
+    }
+
+    private var projectGroups: [ThreadFolderGroup] {
+        appModel.threads.groupedForThreadBrowser(
+            by: browserPreferences.sort,
+            show: browserPreferences.show,
+            selectedThreadID: appModel.selectedThreadID
+        )
+    }
+
+    private var threadCreationTargets: [ThreadCreationTarget] {
+        let groupedThreads = Dictionary(grouping: appModel.threads, by: \.cwd)
+        let candidates: [ThreadCreationCandidate] = groupedThreads.compactMap { entry in
+                let cwd = entry.key
+                let threads = entry.value
+                let trimmedPath = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedPath.isEmpty else {
+                    return nil
+                }
+
+                let latestThread = threads.max(by: { $0.updatedAt < $1.updatedAt })
+                return (
+                    target: ThreadCreationTarget(
+                        id: cwd,
+                        cwd: cwd,
+                        title: ThreadProjectName.displayName(for: cwd),
+                        subtitle: CodexDisplay.formatDirectoryDisplay(cwd)
+                    ),
+                    updatedAt: latestThread?.updatedAt ?? 0
+                )
+            }
+        return candidates
+            .sorted { lhs, rhs in
+                if lhs.updatedAt == rhs.updatedAt {
+                    return lhs.target.title.localizedCaseInsensitiveCompare(rhs.target.title) == .orderedAscending
+                }
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            .map(\.target)
     }
 
     var body: some View {
@@ -25,8 +75,24 @@ struct ThreadBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task {
             if appModel.threads.isEmpty {
-                await appModel.refreshThreads()
+                await refreshThreadList()
             }
+        }
+        .onChange(of: appModel.selectedThreadID) { _, threadID in
+            guard let threadID,
+                  let groupID = appModel.threads.first(where: { $0.id == threadID })?.cwd else {
+                return
+            }
+            collapsedProjectIDs.remove(groupID)
+        }
+        .sheet(isPresented: $isPresentingNewThreadSheet) {
+            NewThreadSheet(
+                creationTargets: threadCreationTargets,
+                createThread: { cwd in
+                    await createThread(cwd: cwd)
+                }
+            )
+            .presentationCornerRadius(18)
         }
     }
 
@@ -88,7 +154,7 @@ struct ThreadBrowserView: View {
             topSpacing: 6,
             bottomSpacing: 88,
             onRefresh: {
-                await appModel.refreshThreads()
+                await refreshThreadList()
             }
         ) {
             SidekickTopBar {
@@ -99,6 +165,17 @@ struct ThreadBrowserView: View {
                 )
             } trailing: {
                 HStack(spacing: 10) {
+                    ThreadOrganizerMenu(
+                        preferences: browserPreferences,
+                        selectOrganization: { browserPreferences.organization = $0 },
+                        selectSort: { sort in
+                            browserPreferences.sort = sort
+                            Task {
+                                await refreshThreadList()
+                            }
+                        },
+                        selectShow: { browserPreferences.show = $0 }
+                    )
                     refreshToolbarButton
                     approvalsToolbarButton
                 }
@@ -111,7 +188,7 @@ struct ThreadBrowserView: View {
                     BannerCard(message: bannerMessage, tone: bannerTone)
                 }
 
-                threadCards(
+                threadOrganizerContent(
                     selectionHandler: selectThread,
                     navigationHandler: navigationHandler
                 )
@@ -188,80 +265,96 @@ struct ThreadBrowserView: View {
             Button("Reconnect") {
                 Task {
                     await appModel.reconnect()
+                    await refreshThreadList()
                 }
             }
             .buttonStyle(SidekickActionButtonStyle(tone: .secondary))
         }
     }
 
-    private var refreshToolbarButton: some View {
-        SidekickCircularToolbarButton(systemImage: "arrow.clockwise") {
-            Task {
-                if appModel.isConnected {
-                    await appModel.refreshThreads()
-                } else {
-                    await appModel.reconnect()
-                }
-            }
-        }
-    }
-
     @ViewBuilder
-    private func threadCards(
+    private func threadOrganizerContent(
         selectionHandler: @escaping (String) -> Void,
         navigationHandler: @escaping (String) -> Void
     ) -> some View {
-        if appModel.threads.isEmpty {
+        if visibleThreads.isEmpty {
             ThreadEmptyStateCard(
-                title: appModel.isConnecting ? "Connecting to Codex" : "No threads yet",
-                message: appModel.isConnecting
-                    ? "The sidekick is waiting for the host to finish pairing and send down the thread index."
-                    : "Tap New Thread or start a thread in Codex desktop to populate this list."
+                title: emptyStateTitle,
+                message: emptyStateMessage
             )
-        } else {
-            SurfaceCard(padding: 6) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .center) {
-                        Text("Recent threads")
-                            .font(theme.codeFont(10, weight: .semibold))
-                            .foregroundStyle(theme.textTertiary)
-
-                        Spacer(minLength: 12)
-
-                        Text("\(appModel.threads.count) synced")
-                            .font(theme.codeFont(10))
-                            .foregroundStyle(theme.textTertiary)
+        } else if browserPreferences.organization == .byProject {
+            ForEach(projectGroups) { group in
+                ThreadProjectSectionView(
+                    group: group,
+                    selectedThreadID: appModel.selectedThreadID,
+                    isCollapsed: collapsedProjectIDs.contains(group.id),
+                    usesSplitLayout: usesSplitLayout,
+                    selectThread: selectionHandler,
+                    navigateToThread: navigationHandler,
+                    toggleCollapsed: { toggleCollapsedGroup(group.id) },
+                    createThreadInGroup: {
+                        Task {
+                            await createThread(cwd: group.path)
+                        }
                     }
+                )
+            }
+        } else {
+            chronologicalThreadList(
+                selectionHandler: selectionHandler,
+                navigationHandler: navigationHandler
+            )
+        }
+    }
 
-                    VStack(spacing: 0) {
-                        ForEach(Array(appModel.threads.enumerated()), id: \.element.id) { index, thread in
-                            if index > 0 {
-                                Divider()
-                                    .overlay(theme.divider)
-                                    .padding(.leading, 10)
-                            }
+    private func chronologicalThreadList(
+        selectionHandler: @escaping (String) -> Void,
+        navigationHandler: @escaping (String) -> Void
+    ) -> some View {
+        SurfaceCard(padding: 6) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .center) {
+                    Text(browserPreferences.show == .all ? "Threads" : "Relevant threads")
+                        .font(theme.codeFont(10, weight: .semibold))
+                        .foregroundStyle(theme.textTertiary)
 
-                            if usesSplitLayout {
-                                Button {
-                                    selectionHandler(thread.id)
-                                } label: {
-                                    ThreadRowCard(
-                                        thread: thread,
-                                        isSelected: appModel.selectedThreadID == thread.id
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            } else {
-                                Button {
-                                    navigationHandler(thread.id)
-                                } label: {
-                                    ThreadRowCard(
-                                        thread: thread,
-                                        isSelected: appModel.selectedThreadID == thread.id
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                    Spacer(minLength: 12)
+
+                    Text("\(visibleThreads.count)")
+                        .font(theme.codeFont(10))
+                        .foregroundStyle(theme.textTertiary)
+                }
+
+                VStack(spacing: 0) {
+                    ForEach(Array(visibleThreads.enumerated()), id: \.element.id) { index, thread in
+                        if index > 0 {
+                            Divider()
+                                .overlay(theme.divider)
+                                .padding(.leading, 10)
+                        }
+
+                        if usesSplitLayout {
+                            Button {
+                                selectionHandler(thread.id)
+                            } label: {
+                                ThreadRowCard(
+                                    thread: thread,
+                                    isSelected: appModel.selectedThreadID == thread.id,
+                                    showsDirectory: true
+                                )
                             }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button {
+                                navigationHandler(thread.id)
+                            } label: {
+                                ThreadRowCard(
+                                    thread: thread,
+                                    isSelected: appModel.selectedThreadID == thread.id,
+                                    showsDirectory: true
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -271,11 +364,22 @@ struct ThreadBrowserView: View {
         }
     }
 
+    private var refreshToolbarButton: some View {
+        SidekickCircularToolbarButton(systemImage: "arrow.clockwise") {
+            Task {
+                if appModel.isConnected {
+                    await refreshThreadList()
+                } else {
+                    await appModel.reconnect()
+                    await refreshThreadList()
+                }
+            }
+        }
+    }
+
     private var newThreadButton: some View {
         Button {
-            Task {
-                await createThread()
-            }
+            isPresentingNewThreadSheet = true
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.pencil")
@@ -332,6 +436,27 @@ struct ThreadBrowserView: View {
                     }
                 }
         }
+        .buttonStyle(.plain)
+    }
+
+    private var emptyStateTitle: String {
+        if appModel.isConnecting {
+            return "Connecting to Codex"
+        }
+        if browserPreferences.show == .relevant {
+            return "No relevant threads"
+        }
+        return "No threads yet"
+    }
+
+    private var emptyStateMessage: String {
+        if appModel.isConnecting {
+            return "The sidekick is waiting for the host to finish pairing and send down the thread index."
+        }
+        if browserPreferences.show == .relevant {
+            return "Switch Show back to All threads, or start working in a project to pull it back into the recent set."
+        }
+        return "Tap New Thread or start a thread in Codex desktop to populate this list."
     }
 
     private var statusLabel: String {
@@ -378,6 +503,7 @@ struct ThreadBrowserView: View {
 
     private func selectThread(_ threadID: String) {
         appModel.selectedThreadID = threadID
+        collapsedProjectIDs.remove(appModel.threads.first(where: { $0.id == threadID })?.cwd ?? "")
         Task {
             await appModel.selectThread(threadID)
         }
@@ -388,87 +514,36 @@ struct ThreadBrowserView: View {
         compactThreadID = threadID
     }
 
-    private func createThread() async {
-        guard let threadID = await appModel.createThread() else {
-            return
+    private func refreshThreadList() async {
+        await appModel.refreshThreads(
+            using: AppModel.ThreadListContext(
+                sortKey: browserPreferences.sort.apiSortKey,
+                cwd: nil
+            )
+        )
+    }
+
+    private func toggleCollapsedGroup(_ groupID: String) {
+        if collapsedProjectIDs.contains(groupID) {
+            collapsedProjectIDs.remove(groupID)
+        } else {
+            collapsedProjectIDs.insert(groupID)
+        }
+    }
+
+    private func createThread(cwd: String? = nil) async -> String? {
+        let threadID = await appModel.createThread(cwd: cwd)
+        guard let threadID else {
+            return nil
+        }
+
+        if let cwd {
+            collapsedProjectIDs.remove(cwd)
         }
 
         if usesSplitLayout == false {
             compactThreadID = threadID
         }
-    }
-}
-
-private struct ThreadRowCard: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.sidekickTheme) private var theme
-
-    let thread: CodexThread
-    let isSelected: Bool
-
-    private var usesCompactLayout: Bool {
-        horizontalSizeClass != .regular
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: usesCompactLayout ? 5 : 7) {
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: usesCompactLayout ? 2 : 3) {
-                    Text(thread.displayTitle)
-                        .font(theme.codeFont(usesCompactLayout ? 13 : 14, weight: .semibold))
-                        .foregroundStyle(theme.textPrimary)
-                        .lineLimit(2)
-
-                    Text(thread.preview.isEmpty ? "No preview yet" : thread.preview)
-                        .font(theme.font(11))
-                        .foregroundStyle(theme.textSecondary)
-                        .lineLimit(usesCompactLayout ? 1 : 2)
-                }
-
-                Spacer(minLength: 0)
-
-                Text(thread.updatedDate, style: .relative)
-                    .font(theme.codeFont(10))
-                    .foregroundStyle(theme.textTertiary)
-                    .lineLimit(1)
-            }
-
-            HStack(spacing: 8) {
-                Label(thread.subtitle, systemImage: "folder")
-                    .lineLimit(1)
-
-                Spacer(minLength: 10)
-
-                StatusPill(text: thread.status.label, tone: tone(for: thread.status))
-            }
-            .font(theme.codeFont(10))
-            .foregroundStyle(theme.textTertiary)
-        }
-        .padding(usesCompactLayout ? 10 : 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(theme.selection)
-            }
-        }
-        .overlay {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(theme.accent.opacity(0.34), lineWidth: 1)
-            }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private func tone(for status: ThreadStatus) -> StatusTone {
-        switch status {
-        case .notLoaded, .idle:
-            return .neutral
-        case .systemError:
-            return .danger
-        case .active(let flags):
-            return flags.contains(.waitingOnApproval) ? .warning : .success
-        }
+        return threadID
     }
 }

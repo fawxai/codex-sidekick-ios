@@ -61,6 +61,11 @@ final class AppModel {
         }
     }
 
+    struct ThreadListContext: Sendable {
+        var sortKey: ThreadSortKey = .updatedAt
+        var cwd: String?
+    }
+
     var connectionDraft = ConnectionDraft()
     var discoveryInput = ""
     var pairingCodeInput = ""
@@ -86,6 +91,7 @@ final class AppModel {
     private let appearanceStore = AppearanceStore()
     private var transport: CodexTransport?
     private var eventTask: Task<Void, Never>?
+    private var threadListContext = ThreadListContext()
 
     var hasSavedPairing: Bool {
         pairedConnection != nil
@@ -302,17 +308,25 @@ final class AppModel {
         connectionDraft.authToken = ""
     }
 
-    func refreshThreads() async {
+    func refreshThreads(using context: ThreadListContext? = nil) async {
         guard let transport else { return }
+
+        if let context {
+            threadListContext = context
+        }
 
         do {
             let response: ThreadListResponse = try await transport.request(
                 method: "thread/list",
-                params: ThreadListParams(archived: false),
+                params: ThreadListParams(
+                    sortKey: threadListContext.sortKey,
+                    archived: false,
+                    cwd: threadListContext.cwd
+                ),
                 as: ThreadListResponse.self
             )
             let visibleThreadIDs = Set(response.data.map(\.id))
-            threads = response.data.sorted(by: { $0.updatedAt > $1.updatedAt })
+            threads = response.data
             threadDetails = threadDetails.filter { visibleThreadIDs.contains($0.key) }
             if let selectedThreadID,
                threads.contains(where: { $0.id == selectedThreadID }) == false {
@@ -325,7 +339,7 @@ final class AppModel {
         }
     }
 
-    func createThread() async -> String? {
+    func createThread(cwd: String? = nil) async -> String? {
         guard let transport else {
             bannerMessage = "Connect to Codex before starting a thread."
             return nil
@@ -334,7 +348,7 @@ final class AppModel {
         do {
             let response: ThreadStartResponse = try await transport.request(
                 method: "thread/start",
-                params: ThreadStartParams(),
+                params: ThreadStartParams(cwd: cwd),
                 as: ThreadStartResponse.self
             )
             storeThread(response.thread)
