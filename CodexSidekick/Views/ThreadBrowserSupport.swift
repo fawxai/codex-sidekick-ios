@@ -84,6 +84,8 @@ struct ThreadCreationTarget: Identifiable, Hashable {
 }
 
 enum ThreadProjectName {
+    private static let maxDisplayWords = 3
+
     static func displayName(for path: String, preferredName: String? = nil) -> String {
         if let preferredName {
             let trimmedName = collapseWords(preferredName)
@@ -108,10 +110,10 @@ enum ThreadProjectName {
     private static func collapseWords(_ rawValue: String) -> String {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let words = trimmed.split(whereSeparator: \.isWhitespace)
-        guard words.count > 3 else {
+        guard words.count > maxDisplayWords else {
             return trimmed
         }
-        return words.prefix(3).joined(separator: " ")
+        return words.prefix(maxDisplayWords).joined(separator: " ")
     }
 }
 
@@ -401,28 +403,41 @@ struct ThreadProjectSectionView: View {
 
     @ViewBuilder
     private func threadRow(_ thread: CodexThread) -> some View {
+        ThreadRowButton(
+            thread: thread,
+            isSelected: selectedThreadID == thread.id,
+            showsDirectory: false,
+            usesSplitLayout: usesSplitLayout,
+            selectThread: selectThread,
+            navigateToThread: navigateToThread
+        )
+    }
+}
+
+struct ThreadRowButton: View {
+    let thread: CodexThread
+    let isSelected: Bool
+    let showsDirectory: Bool
+    let usesSplitLayout: Bool
+    let selectThread: (String) -> Void
+    let navigateToThread: (String) -> Void
+
+    var body: some View {
+        Button(action: buttonAction) {
+            ThreadRowCard(
+                thread: thread,
+                isSelected: isSelected,
+                showsDirectory: showsDirectory
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func buttonAction() {
         if usesSplitLayout {
-            Button {
-                selectThread(thread.id)
-            } label: {
-                ThreadRowCard(
-                    thread: thread,
-                    isSelected: selectedThreadID == thread.id,
-                    showsDirectory: false
-                )
-            }
-            .buttonStyle(.plain)
+            selectThread(thread.id)
         } else {
-            Button {
-                navigateToThread(thread.id)
-            } label: {
-                ThreadRowCard(
-                    thread: thread,
-                    isSelected: selectedThreadID == thread.id,
-                    showsDirectory: false
-                )
-            }
-            .buttonStyle(.plain)
+            navigateToThread(thread.id)
         }
     }
 }
@@ -430,6 +445,12 @@ struct ThreadProjectSectionView: View {
 struct ThreadRowCard: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.sidekickTheme) private var theme
+
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
 
     let thread: CodexThread
     let isSelected: Bool
@@ -514,7 +535,7 @@ struct ThreadRowCard: View {
     }
 
     private var relativeDateString: String {
-        RelativeDateTimeFormatter().localizedString(for: thread.updatedDate, relativeTo: .now)
+        Self.relativeDateFormatter.localizedString(for: thread.updatedDate, relativeTo: .now)
     }
 
     private func tone(for status: ThreadStatus) -> StatusTone {

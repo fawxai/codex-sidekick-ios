@@ -43,14 +43,14 @@ struct ThreadDetailView: View {
     }
 
     private var composerModelLabel: String {
-        if let modelName = normalizedModelLabel(appModel.hostModelName) {
+        if let modelName = ComposerDisplayLabel.normalizedModel(appModel.hostModelName) {
             return modelName
         }
-        return normalizedModelLabel(thread?.modelProvider) ?? "Codex"
+        return ComposerDisplayLabel.normalizedModel(thread?.modelProvider) ?? "Codex"
     }
 
     private var composerReasoningLabel: String {
-        normalizedReasoningLabel(appModel.hostReasoningEffortName) ?? "Default"
+        ComposerDisplayLabel.normalizedReasoning(appModel.hostReasoningEffortName) ?? "Default"
     }
 
     private var composerModelOptions: [ComposerModelOption] {
@@ -65,7 +65,7 @@ struct ThreadDetailView: View {
             ComposerModelOption(
                 id: currentSlug,
                 slug: currentSlug,
-                title: normalizedModelLabel(currentSlug) ?? currentSlug,
+                title: ComposerDisplayLabel.normalizedModel(currentSlug) ?? currentSlug,
                 detail: "Current host model."
             )
         ] + ComposerModelOption.defaultCatalog
@@ -91,7 +91,7 @@ struct ThreadDetailView: View {
     }
 
     private var branchLabel: String {
-        normalizedBranchLabel(thread?.gitInfo?.branch) ?? "No branch"
+        ComposerDisplayLabel.normalizedBranch(thread?.gitInfo?.branch) ?? "No branch"
     }
 
     private var threadContextUsage: ThreadTokenUsage? {
@@ -157,8 +157,8 @@ struct ThreadDetailView: View {
                             reasoningEffortName: composerReasoningLabel
                         )
 
-                        if let bannerMessage = appModel.bannerMessage {
-                            BannerCard(message: bannerMessage, tone: .neutral)
+                        if let banner = appModel.banner {
+                            BannerCard(message: banner.message, tone: banner.tone.statusTone)
                         }
 
                         ThreadTimelineView(thread: thread)
@@ -180,6 +180,10 @@ struct ThreadDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task(id: threadID) {
             await appModel.selectThread(threadID)
+        }
+        .onDisappear {
+            composerUtilityNoteTask?.cancel()
+            composerUtilityNoteTask = nil
         }
     }
 
@@ -298,7 +302,7 @@ struct ThreadDetailView: View {
                         select: selectModelOption
                     )
                 } label: {
-                    ComposerMenuChip(text: composerModelLabel)
+                    ComposerChip(text: composerModelLabel, showsChevron: true)
                 }
                 .buttonStyle(.plain)
 
@@ -308,23 +312,23 @@ struct ThreadDetailView: View {
                         select: selectReasoningOption
                     )
                 } label: {
-                    ComposerMenuChip(text: composerReasoningLabel)
+                    ComposerChip(text: composerReasoningLabel, showsChevron: true)
                 }
                 .buttonStyle(.plain)
 
                 if isPlanModeEnabled {
-                    ComposerStateChip(text: "Plan", icon: "list.bullet", tone: .neutral)
+                    ComposerChip(text: "Plan", icon: "list.bullet")
                 }
 
                 if thread?.status.isWaitingOnApproval == true {
-                    ComposerStateChip(text: "Approval", tone: .warning)
+                    ComposerChip(text: "Approval", tone: .warning)
                 }
 
                 if appModel.pendingApprovals.isEmpty == false {
                     Button {
                         selectedSection = .approvals
                     } label: {
-                        ComposerStateChip(
+                        ComposerChip(
                             text: "Review \(appModel.pendingApprovals.count)",
                             icon: "checklist"
                         )
@@ -594,7 +598,7 @@ struct ThreadDetailView: View {
 
         if isPlanModeEnabled {
             return [
-                .text("Plan mode is enabled. Start with a concise step-by-step plan before taking action."),
+                .text(AppModel.planModePrompt),
                 .text(text)
             ]
         }
@@ -626,54 +630,6 @@ struct ThreadDetailView: View {
                 composerUtilityNote = nil
             }
         }
-    }
-
-    private func normalizedModelLabel(_ rawValue: String?) -> String? {
-        guard let rawValue else {
-            return nil
-        }
-
-        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedValue.isEmpty else {
-            return nil
-        }
-
-        if trimmedValue.hasPrefix("gpt-") {
-            return "GPT-\(trimmedValue.dropFirst(4))"
-        }
-        if trimmedValue.lowercased() == "openai" {
-            return "OpenAI"
-        }
-        return trimmedValue
-    }
-
-    private func normalizedReasoningLabel(_ rawValue: String?) -> String? {
-        guard let rawValue else {
-            return nil
-        }
-
-        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedValue.isEmpty else {
-            return nil
-        }
-
-        if trimmedValue.lowercased() == "xhigh" {
-            return "Extra High"
-        }
-
-        return trimmedValue
-            .split(separator: "-", omittingEmptySubsequences: true)
-            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
-            .joined(separator: " ")
-    }
-
-    private func normalizedBranchLabel(_ rawValue: String?) -> String? {
-        guard let rawValue else {
-            return nil
-        }
-
-        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedValue.isEmpty ? nil : trimmedValue
     }
 
     @ViewBuilder

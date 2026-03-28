@@ -29,12 +29,58 @@ enum ComposerReasoningOption: String, CaseIterable, Identifiable {
     }
 }
 
-enum ComposerMenuKind {
-    case neutral
-    case warning
+enum ComposerDisplayLabel {
+    static func normalizedModel(_ rawValue: String?) -> String? {
+        guard let rawValue else {
+            return nil
+        }
+
+        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+            return nil
+        }
+
+        if trimmedValue.hasPrefix("gpt-") {
+            return "GPT-\(trimmedValue.dropFirst(4))"
+        }
+        if trimmedValue.lowercased() == "openai" {
+            return "OpenAI"
+        }
+        return trimmedValue
+    }
+
+    static func normalizedReasoning(_ rawValue: String?) -> String? {
+        guard let rawValue else {
+            return nil
+        }
+
+        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+            return nil
+        }
+
+        if trimmedValue.lowercased() == "xhigh" {
+            return "Extra High"
+        }
+
+        return trimmedValue
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+            .joined(separator: " ")
+    }
+
+    static func normalizedBranch(_ rawValue: String?) -> String? {
+        guard let rawValue else {
+            return nil
+        }
+
+        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
+    }
 }
 
 extension ComposerModelOption {
+    // TODO: Replace this fallback catalog with a host-provided model list when the app-server exposes one.
     static let defaultCatalog: [ComposerModelOption] = [
         ComposerModelOption(
             id: "gpt-5.4",
@@ -87,85 +133,24 @@ extension ComposerModelOption {
     ]
 }
 
-struct ComposerMenuChip: View {
-    @Environment(\.sidekickTheme) private var theme
-
-    let text: String
-    let icon: String?
-    let kind: ComposerMenuKind
-
-    init(text: String, icon: String? = nil, kind: ComposerMenuKind = .neutral) {
-        self.text = text
-        self.icon = icon
-        self.kind = kind
-    }
-
-    var body: some View {
-        HStack(spacing: 5) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(.system(size: 9, weight: .semibold))
-            }
-
-            Text(text)
-                .lineLimit(1)
-
-            Image(systemName: "chevron.down")
-                .font(.system(size: 8, weight: .bold))
-        }
-        .font(theme.codeFont(10, weight: .semibold))
-        .foregroundStyle(foregroundColor)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(backgroundColor)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(borderColor, lineWidth: 1)
-        )
-    }
-
-    private var backgroundColor: Color {
-        switch kind {
-        case .neutral:
-            theme.chromeElevated
-        case .warning:
-            theme.warning.opacity(0.14)
-        }
-    }
-
-    private var foregroundColor: Color {
-        switch kind {
-        case .neutral:
-            theme.textPrimary
-        case .warning:
-            theme.warning
-        }
-    }
-
-    private var borderColor: Color {
-        switch kind {
-        case .neutral:
-            theme.border
-        case .warning:
-            theme.warning.opacity(0.28)
-        }
-    }
-}
-
-struct ComposerStateChip: View {
+struct ComposerChip: View {
     @Environment(\.sidekickTheme) private var theme
 
     let text: String
     let icon: String?
     let tone: StatusTone
+    let showsChevron: Bool
 
-    init(text: String, icon: String? = nil, tone: StatusTone = .neutral) {
+    init(
+        text: String,
+        icon: String? = nil,
+        tone: StatusTone = .neutral,
+        showsChevron: Bool = false
+    ) {
         self.text = text
         self.icon = icon
         self.tone = tone
+        self.showsChevron = showsChevron
     }
 
     var body: some View {
@@ -177,6 +162,11 @@ struct ComposerStateChip: View {
 
             Text(text)
                 .lineLimit(1)
+
+            if showsChevron {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+            }
         }
         .font(theme.codeFont(10, weight: .semibold))
         .foregroundStyle(foregroundColor)

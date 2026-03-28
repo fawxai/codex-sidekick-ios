@@ -184,8 +184,8 @@ struct ThreadBrowserView: View {
             LazyVStack(alignment: .leading, spacing: 8) {
                 connectionCard
 
-                if let bannerMessage = appModel.bannerMessage {
-                    BannerCard(message: bannerMessage, tone: bannerTone)
+                if let banner = appModel.banner {
+                    BannerCard(message: banner.message, tone: banner.tone.statusTone)
                 }
 
                 threadOrganizerContent(
@@ -333,29 +333,14 @@ struct ThreadBrowserView: View {
                                 .padding(.leading, 10)
                         }
 
-                        if usesSplitLayout {
-                            Button {
-                                selectionHandler(thread.id)
-                            } label: {
-                                ThreadRowCard(
-                                    thread: thread,
-                                    isSelected: appModel.selectedThreadID == thread.id,
-                                    showsDirectory: true
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            Button {
-                                navigationHandler(thread.id)
-                            } label: {
-                                ThreadRowCard(
-                                    thread: thread,
-                                    isSelected: appModel.selectedThreadID == thread.id,
-                                    showsDirectory: true
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        ThreadRowButton(
+                            thread: thread,
+                            isSelected: appModel.selectedThreadID == thread.id,
+                            showsDirectory: true,
+                            usesSplitLayout: usesSplitLayout,
+                            selectThread: selectionHandler,
+                            navigateToThread: navigationHandler
+                        )
                     }
                 }
                 .padding(.horizontal, 2)
@@ -483,22 +468,6 @@ struct ThreadBrowserView: View {
         case .failed:
             return .danger
         }
-    }
-
-    private var bannerTone: StatusTone {
-        guard let bannerMessage = appModel.bannerMessage else {
-            return statusTone
-        }
-
-        if bannerMessage.hasPrefix("Approval waiting") {
-            return .warning
-        }
-
-        if bannerMessage == "Connection closed" || bannerMessage.hasPrefix("Could not") {
-            return .danger
-        }
-
-        return statusTone
     }
 
     private func selectThread(_ threadID: String) {

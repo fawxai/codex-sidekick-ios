@@ -4,6 +4,18 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
+    struct Banner: Equatable, Sendable {
+        enum Tone: Equatable, Sendable {
+            case neutral
+            case warning
+            case danger
+            case success
+        }
+
+        let message: String
+        let tone: Tone
+    }
+
     enum ConnectionState: Equatable {
         case disconnected
         case connecting
@@ -83,6 +95,9 @@ final class AppModel {
         }
     }
 
+    static let planModePrompt =
+        "Plan mode is enabled. Start with a concise step-by-step plan before taking action."
+
     var connectionDraft = ConnectionDraft()
     var discoveryInput = ""
     var pairingCodeInput = ""
@@ -107,7 +122,7 @@ final class AppModel {
     var isBootstrapping = false
     var isDiscoveringHost = false
     var isClaimingPairing = false
-    var bannerMessage: String?
+    var banner: Banner?
     var pairingErrorMessage: String?
 
     private let pairingStore = PairingStore()
@@ -236,7 +251,7 @@ final class AppModel {
 
         await disconnectTransport()
         connectionState = .connecting
-        bannerMessage = nil
+        banner = nil
         pairingErrorMessage = nil
 
         do {
@@ -353,7 +368,7 @@ final class AppModel {
         accountRateLimits = nil
         threadTokenUsageByThreadID = [:]
         connectionState = .disconnected
-        bannerMessage = nil
+        banner = nil
         pairingErrorMessage = nil
         connectionDraft.authToken = ""
     }
@@ -385,13 +400,16 @@ final class AppModel {
                 selectedThreadID = threads.first?.id
             }
         } catch {
-            bannerMessage = "Could not load threads: \(error.localizedDescription)"
+            showBanner(
+                "Could not load threads: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
     func createThread(cwd: String? = nil) async -> String? {
         guard let transport else {
-            bannerMessage = "Connect to Codex before starting a thread."
+            showBanner("Connect to Codex before starting a thread.", tone: .warning)
             return nil
         }
 
@@ -406,7 +424,10 @@ final class AppModel {
             await readThread(response.thread.id, force: true)
             return response.thread.id
         } catch {
-            bannerMessage = "Could not start a new thread: \(error.localizedDescription)"
+            showBanner(
+                "Could not start a new thread: \(error.localizedDescription)",
+                tone: .danger
+            )
             return nil
         }
     }
@@ -433,7 +454,10 @@ final class AppModel {
             )
             storeThread(response.thread)
         } catch {
-            bannerMessage = "Could not open thread: \(error.localizedDescription)"
+            showBanner(
+                "Could not open thread: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -442,7 +466,10 @@ final class AppModel {
         do {
             try await resumeThread(selectedThreadID)
         } catch {
-            bannerMessage = "Could not open live thread: \(error.localizedDescription)"
+            showBanner(
+                "Could not open live thread: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -471,7 +498,10 @@ final class AppModel {
             replaceTurn(threadID: selectedThreadID, turn: response.turn)
             handoffDraft = ""
         } catch {
-            bannerMessage = "Could not send handoff: \(error.localizedDescription)"
+            showBanner(
+                "Could not send handoff: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -510,7 +540,10 @@ final class AppModel {
                 )
             ])
         case .customConfig:
-            bannerMessage = "Custom permission mode is managed by the host config."
+            showBanner(
+                "Custom permission mode is managed by the host config.",
+                tone: .neutral
+            )
         }
     }
 
@@ -529,7 +562,10 @@ final class AppModel {
             )
             pendingApprovals.removeAll(where: { $0.id == approval.id })
         } catch {
-            bannerMessage = "Could not respond to approval: \(error.localizedDescription)"
+            showBanner(
+                "Could not respond to approval: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -544,7 +580,10 @@ final class AppModel {
             )
             pendingApprovals.removeAll(where: { $0.id == approval.id })
         } catch {
-            bannerMessage = "Could not respond to approval: \(error.localizedDescription)"
+            showBanner(
+                "Could not respond to approval: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -559,7 +598,10 @@ final class AppModel {
             )
             pendingApprovals.removeAll(where: { $0.id == approval.id })
         } catch {
-            bannerMessage = "Could not respond to approval: \(error.localizedDescription)"
+            showBanner(
+                "Could not respond to approval: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -574,7 +616,10 @@ final class AppModel {
             )
             pendingApprovals.removeAll(where: { $0.id == approval.id })
         } catch {
-            bannerMessage = "Could not respond to approval: \(error.localizedDescription)"
+            showBanner(
+                "Could not respond to approval: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -699,7 +744,7 @@ final class AppModel {
 
     private func writeConfigEdits(_ edits: [ConfigEdit]) async {
         guard let transport else {
-            bannerMessage = "Connect to Codex before updating host settings."
+            showBanner("Connect to Codex before updating host settings.", tone: .warning)
             return
         }
 
@@ -716,7 +761,10 @@ final class AppModel {
             )
             await refreshHostConfigSnapshot()
         } catch {
-            bannerMessage = "Could not update host config: \(error.localizedDescription)"
+            showBanner(
+                "Could not update host config: \(error.localizedDescription)",
+                tone: .danger
+            )
         }
     }
 
@@ -737,7 +785,7 @@ final class AppModel {
             handle(request)
         case .disconnected(let message):
             connectionState = .failed(message)
-            bannerMessage = "Connection closed"
+            showBanner("Connection closed", tone: .danger)
         }
     }
 
@@ -899,7 +947,10 @@ final class AppModel {
             pendingApprovals.insert(approval, at: 0)
         }
         if wasEmpty {
-            bannerMessage = "Approval waiting in \(title(for: approval.threadID))"
+            showBanner(
+                "Approval waiting in \(title(for: approval.threadID))",
+                tone: .warning
+            )
         }
         if selectedThreadID == nil {
             selectedThreadID = approval.threadID
@@ -917,5 +968,9 @@ final class AppModel {
 
     private func persistAppearance() {
         try? appearanceStore.save(appearanceSettings)
+    }
+
+    private func showBanner(_ message: String, tone: Banner.Tone) {
+        banner = Banner(message: message, tone: tone)
     }
 }
