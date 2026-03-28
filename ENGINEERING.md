@@ -97,7 +97,8 @@ Rules:
 ## 5. Networking and Persistence
 
 - Speak the existing app-server JSON-RPC contract. Do not invent a parallel
-  mobile API.
+  live-session API.
+- Keep pairing bootstrap small, explicit, and separate from live session logic.
 - Endpoint classification and auth policy must live in one obvious place.
 - Store secrets in secure storage, not plain defaults.
 - Never log bearer tokens or emit them into screenshots or debug copy.

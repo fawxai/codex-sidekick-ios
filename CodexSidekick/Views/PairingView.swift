@@ -5,7 +5,6 @@ struct PairingView: View {
     @Environment(\.sidekickTheme) private var theme
 
     @Bindable var appModel: AppModel
-    @State private var pairingArtifactInput = ""
 
     private enum PairingMode: String, CaseIterable, Identifiable {
         case local
@@ -30,7 +29,7 @@ struct PairingView: View {
             case .local:
                 return "Loopback pairing for simulator and same-Mac testing. Bearer token is optional."
             case .tailscale:
-                return "Tailnet pairing for your phone. Use a `.ts.net` name or Tailscale IP, and include a bearer token."
+                return "Tailnet pairing for your phone. Use the discovery flow above or a `.ts.net` websocket URL with a bearer token."
             case .manual:
                 return "Advanced remote endpoint. Use `wss://` if you need bearer auth outside localhost or Tailscale."
             }
@@ -67,7 +66,8 @@ struct PairingView: View {
         ) {
             VStack(alignment: .leading, spacing: 14) {
                 heroCard
-                pairingCard
+                discoveryCard
+                advancedPairingCard
                 protocolCard
             }
         }
@@ -92,11 +92,11 @@ struct PairingView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         StatusPill(text: "MOBILE SIDEKICK", tone: .neutral)
 
-                        Text("Codex on your phone, not a desktop app squeezed into portrait.")
+                        Text("Discovery first, then a short pairing claim.")
                             .font(theme.codeFont(24, weight: .semibold))
                             .foregroundStyle(theme.textPrimary)
 
-                        Text("Pair to a live `codex app-server`, pick up a thread, hand the next step back to Codex, and clear approvals from a native iPhone shell.")
+                        Text("The phone discovers a real host surface first. Then it redeems a short-lived code to fetch the actual websocket token from that host without ever stuffing the token into a QR or pairing string.")
                             .font(theme.font(14))
                             .foregroundStyle(theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -108,34 +108,193 @@ struct PairingView: View {
                 LazyVGrid(
                     columns: [
                         GridItem(.flexible(minimum: 120), spacing: 10),
-                        GridItem(.flexible(minimum: 120), spacing: 10)
+                        GridItem(.flexible(minimum: 120), spacing: 10),
                     ],
                     alignment: .leading,
                     spacing: 8
                 ) {
-                    capabilityPill("Pairing")
-                    capabilityPill("Thread list")
-                    capabilityPill("Open live")
+                    capabilityPill("Discovery")
+                    capabilityPill("Short code")
+                    capabilityPill("QR claim")
                     capabilityPill("Approvals")
                 }
             }
         }
     }
 
-    private var pairingCard: some View {
+    private var discoveryCard: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Pair with Codex")
+                    Text("Discovery Pairing")
                         .font(theme.codeFont(18, weight: .semibold))
                         .foregroundStyle(theme.textPrimary)
 
-                    Text("Use the websocket endpoint exposed by `codex app-server`. Local loopback and authenticated Tailscale pairing are both first-class paths here.")
+                    Text("Use the plugin's discovery URL on your tailnet, or open a QR deep link that points at that host. The short pairing code is redeemed on the host and never contains the real bearer token.")
                         .font(theme.font(13))
                         .foregroundStyle(theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                quickImportSection
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Discovery Target")
+                        .font(theme.codeFont(10, weight: .semibold))
+                        .foregroundStyle(theme.textTertiary)
+
+                    TextField(discoveryPlaceholder, text: $appModel.discoveryInput)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .sidekickInputFieldStyle()
+
+                    HStack(spacing: 8) {
+                        Button {
+                            Task {
+                                await appModel.discoverHost()
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                if appModel.isDiscoveringHost {
+                                    ProgressView()
+                                        .tint(theme.backgroundBottom)
+                                }
+
+                                Text(appModel.isDiscoveringHost ? "Discovering..." : "Discover Host")
+                            }
+                        }
+                        .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
+                        .disabled(appModel.isBusyPairing)
+                    }
+                }
+
+                if let discoveredHost = appModel.discoveredHost {
+                    discoveredHostCard(discoveredHost)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Pairing Code")
+                        .font(theme.codeFont(10, weight: .semibold))
+                        .foregroundStyle(theme.textTertiary)
+
+                    TextField("ABCD3F7K", text: $appModel.pairingCodeInput)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .sidekickInputFieldStyle()
+
+                    HStack(spacing: 8) {
+                        Button {
+                            Task {
+                                await appModel.claimDiscoveredHost()
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                if appModel.isClaimingPairing || appModel.isConnecting {
+                                    ProgressView()
+                                        .tint(theme.backgroundBottom)
+                                }
+
+                                Text(appModel.isClaimingPairing || appModel.isConnecting ? "Pairing..." : "Redeem Code & Pair")
+                            }
+                        }
+                        .buttonStyle(SidekickActionButtonStyle(tone: .primary, fullWidth: true))
+                        .disabled(appModel.discoveredHost == nil || appModel.isBusyPairing)
+                    }
+                }
+
+                if let pairingErrorMessage = appModel.pairingErrorMessage {
+                    Text(pairingErrorMessage)
+                        .font(theme.codeFont(12, weight: .medium))
+                        .foregroundStyle(theme.danger)
+                }
+
+                if let errorMessage = appModel.connectionErrorMessage {
+                    Text(errorMessage)
+                        .font(theme.codeFont(12, weight: .medium))
+                        .foregroundStyle(theme.danger)
+                }
+
+                Divider()
+                    .overlay(theme.divider)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    DotStatusRow(
+                        title: "Host discovery",
+                        value: "Tailnet discovery URL",
+                        tone: .neutral
+                    )
+                    DotStatusRow(
+                        title: "Claim",
+                        value: "8-character one-time code",
+                        tone: .neutral
+                    )
+                    DotStatusRow(
+                        title: "QR",
+                        value: "Deep link to host discovery, not the token",
+                        tone: .neutral
+                    )
+                }
+            }
+        }
+    }
+
+    private func discoveredHostCard(_ discoveredHost: PairingDiscoveryRecord) -> some View {
+        SurfaceCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(discoveredHost.hostLabel)
+                            .font(theme.codeFont(15, weight: .semibold))
+                            .foregroundStyle(theme.textPrimary)
+
+                        Text(discoveredHost.websocketURL)
+                            .font(theme.codeFont(11))
+                            .foregroundStyle(theme.textSecondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    StatusPill(
+                        text: discoveredHost.connectionKind.uppercased(),
+                        tone: discoveredHost.connectionKind.lowercased() == "tailnet" ? .success : .neutral
+                    )
+                }
+
+                DotStatusRow(
+                    title: "Discovery",
+                    value: discoveredHost.discoveryURL,
+                    tone: .neutral
+                )
+                DotStatusRow(
+                    title: "Claim",
+                    value: "\(discoveredHost.pairingCode.length)-character \(discoveredHost.pairingCode.format) code",
+                    tone: .neutral
+                )
+                DotStatusRow(
+                    title: "Expires",
+                    value: "\(discoveredHost.pairingCode.ttlSeconds / 60) minutes",
+                    tone: .neutral
+                )
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(theme.panelMuted)
+        )
+    }
+
+    private var advancedPairingCard: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Advanced Direct Connection")
+                        .font(theme.codeFont(18, weight: .semibold))
+                        .foregroundStyle(theme.textPrimary)
+
+                    Text("Keep this for simulator work, direct loopback testing, or when you already know the raw websocket endpoint. Discovery pairing above is the preferred phone path.")
+                        .font(theme.font(13))
+                        .foregroundStyle(theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Connection Path")
@@ -184,15 +343,9 @@ struct PairingView: View {
 
                 if selectedPairingMode == .tailscale,
                    appModel.connectionDraft.normalizedAuthToken.isEmpty {
-                    Text("Tailscale pairing will be rejected until a bearer token is present.")
+                    Text("Direct Tailscale pairing will be rejected until a bearer token is present.")
                         .font(theme.codeFont(12, weight: .medium))
                         .foregroundStyle(theme.warning)
-                }
-
-                if let errorMessage = appModel.connectionErrorMessage {
-                    Text(errorMessage)
-                        .font(theme.codeFont(12, weight: .medium))
-                        .foregroundStyle(theme.danger)
                 }
 
                 HStack(spacing: 8) {
@@ -207,11 +360,11 @@ struct PairingView: View {
                                     .tint(theme.backgroundBottom)
                             }
 
-                            Text(appModel.isConnecting ? "Pairing..." : "Pair to Codex")
+                            Text(appModel.isConnecting ? "Connecting..." : "Connect Directly")
                         }
                     }
-                    .buttonStyle(SidekickActionButtonStyle(tone: .primary, fullWidth: true))
-                    .disabled(appModel.isConnecting)
+                    .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
+                    .disabled(appModel.isBusyPairing)
                 }
 
                 Divider()
@@ -238,53 +391,21 @@ struct PairingView: View {
         }
     }
 
-    private var quickImportSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Quick Import")
-                .font(theme.codeFont(10, weight: .semibold))
-                .foregroundStyle(theme.textTertiary)
-
-            Text("Paste a pairing code from the desktop plugin, or scan a QR code that opens this app. The phone will import the endpoint and token together.")
-                .font(theme.font(12))
-                .foregroundStyle(theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            TextField("codex-sidekick:v1:...", text: $pairingArtifactInput, axis: .vertical)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .lineLimit(2...4)
-                .sidekickInputFieldStyle()
-
-            HStack(spacing: 8) {
-                Button {
-                    let artifact = pairingArtifactInput
-                    Task {
-                        await appModel.importPairingArtifact(artifact)
-                        pairingArtifactInput = ""
-                    }
-                } label: {
-                    Text("Import & Pair")
-                }
-                .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
-                .disabled(pairingArtifactInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || appModel.isConnecting)
-            }
-        }
-    }
-
     private var protocolCard: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("First Vertical Slice")
+                Text("Pairing Contract")
                     .font(theme.codeFont(16, weight: .semibold))
                     .foregroundStyle(theme.textPrimary)
 
-                Text("The initial mobile flow follows the real app-server model instead of inventing a side protocol.")
+                Text("The phone uses a tiny discovery + claim step for pairing, then speaks the normal app-server protocol for everything live.")
                     .font(theme.font(13))
                     .foregroundStyle(theme.textSecondary)
 
+                DotStatusRow(title: "Discover", value: "tailnet host metadata", tone: .neutral)
+                DotStatusRow(title: "Claim", value: "short-lived one-time code", tone: .neutral)
                 DotStatusRow(title: "Handshake", value: "initialize -> initialized", tone: .neutral)
                 DotStatusRow(title: "Browse", value: "thread/list + thread/read", tone: .neutral)
-                DotStatusRow(title: "Open live", value: "thread/resume", tone: .neutral)
                 DotStatusRow(title: "Handoff", value: "turn/start", tone: .neutral)
                 DotStatusRow(title: "Approvals", value: "server requests", tone: .neutral)
             }
@@ -306,6 +427,10 @@ struct PairingView: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(theme.border, lineWidth: 1)
             )
+    }
+
+    private var discoveryPlaceholder: String {
+        "your-mac.tailnet.ts.net or http://your-mac.tailnet.ts.net:4231/v1/discover"
     }
 
     private var urlPlaceholder: String {

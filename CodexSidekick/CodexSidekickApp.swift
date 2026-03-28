@@ -12,7 +12,7 @@ struct CodexSidekickApp: App {
                 }
                 .onOpenURL { url in
                     Task {
-                        await appModel.importPairingArtifact(url.absoluteString)
+                        await appModel.importPairingLink(url.absoluteString)
                     }
                 }
         }

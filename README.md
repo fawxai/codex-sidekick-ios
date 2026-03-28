@@ -1,9 +1,9 @@
 # Codex Sidekick iOS
 
 `CodexSidekick` is a native SwiftUI iPhone companion for Codex. It pairs to the
-real `codex app-server` websocket interface instead of inventing a side
-protocol, so the app stays aligned with the thread/session model used by rich
-Codex clients.
+real `codex app-server` websocket interface for live use, with a small
+discovery-and-claim bootstrap flow so the phone never has to ingest a raw
+bearer token through a QR payload.
 
 ## Current slice
 
@@ -16,27 +16,33 @@ Codex clients.
 
 ## Pairing model
 
-The app currently supports three connection paths:
+The preferred phone flow is discovery first:
+
+1. discover a host through its discovery URL
+2. redeem an 8-character pairing code or a QR deep link that points at that
+   host
+3. connect to the returned `codex app-server` websocket endpoint
+
+The app still supports direct connection paths when you already know the raw
+websocket endpoint:
 
 - `Local`: loopback `ws://` pairing for simulator and same-Mac testing
 - `Tailscale`: authenticated tailnet `ws://` pairing with a bearer token
 - `Manual`: generic remote pairing, with bearer auth limited to `wss://`
 
-Tailscale pairing uses the host's `.ts.net` name or Tailscale IP and requires a
-bearer token from the host.
+For discovery pairing, the QR/deep link carries only:
 
-The app also supports quick import:
+- the discovery URL
+- the short-lived claim code
 
-- paste a `codex-sidekick:v1:...` pairing code from the desktop plugin
-- open a `codexsidekick://pair?...` link
-- scan a QR image that carries that same app link
+It does not carry the bearer token itself.
 
 ## Companion plugin
 
 The recommended desktop-side pairing flow lives in the companion repository
 `codex-sidekick-plugin`, which prepares a Tailscale-capable `codex app-server`
-listener and can emit either a pairing code or a QR-ready deep link for the
-phone.
+listener, serves a host discovery document, and issues short-lived claim codes
+for the phone.
 
 ## Build
 

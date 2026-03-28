@@ -62,6 +62,9 @@ final class AppModel {
     }
 
     var connectionDraft = ConnectionDraft()
+    var discoveryInput = ""
+    var pairingCodeInput = ""
+    var discoveredHost: PairingDiscoveryRecord?
     var pairedConnection: StoredPairing?
     var connectionState: ConnectionState = .disconnected
     var initializeResponse: InitializeResponse?
@@ -73,9 +76,13 @@ final class AppModel {
     var appearanceSettings = SidekickAppearanceSettings()
     var hostAppearance = HostAppearanceSnapshot(themeName: nil)
     var isBootstrapping = false
+    var isDiscoveringHost = false
+    var isClaimingPairing = false
     var bannerMessage: String?
+    var pairingErrorMessage: String?
 
     private let pairingStore = PairingStore()
+    private let pairingBrokerClient = PairingBrokerClient()
     private let appearanceStore = AppearanceStore()
     private var transport: CodexTransport?
     private var eventTask: Task<Void, Never>?
@@ -86,6 +93,10 @@ final class AppModel {
 
     var isConnecting: Bool {
         connectionState == .connecting
+    }
+
+    var isBusyPairing: Bool {
+        isConnecting || isDiscoveringHost || isClaimingPairing
     }
 
     var isConnected: Bool {
@@ -136,6 +147,7 @@ final class AppModel {
             websocketURL: restored.stored.websocketURL,
             authToken: restored.token ?? ""
         )
+        discoveryInput = restored.stored.suggestedDiscoveryTarget
         await connect()
     }
 
@@ -177,6 +189,7 @@ final class AppModel {
         await disconnectTransport()
         connectionState = .connecting
         bannerMessage = nil
+        pairingErrorMessage = nil
 
         do {
             let transport = CodexTransport()
@@ -207,13 +220,69 @@ final class AppModel {
         await connect()
     }
 
-    func importPairingArtifact(_ rawValue: String) async {
+    func discoverHost() async {
+        let discoveryTarget = discoveryInput
+        guard !discoveryTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            pairingErrorMessage = "Enter a `.ts.net` host or full discovery URL."
+            return
+        }
+
+        isDiscoveringHost = true
+        pairingErrorMessage = nil
+        defer { isDiscoveringHost = false }
+
         do {
-            connectionDraft = try PairingArtifact.connectionDraft(from: rawValue)
+            let discoveredHost = try await pairingBrokerClient.discover(from: discoveryTarget)
+            self.discoveredHost = discoveredHost
+            connectionDraft.websocketURL = discoveredHost.websocketURL
+            if connectionDraft.normalizedAuthToken.isEmpty {
+                connectionDraft.authToken = ""
+            }
+        } catch {
+            pairingErrorMessage = error.localizedDescription
+        }
+    }
+
+    func claimDiscoveredHost() async {
+        guard let discoveredHost else {
+            pairingErrorMessage = "Discover a Codex host before entering a pairing code."
+            return
+        }
+
+        let code = pairingCodeInput
+        guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            pairingErrorMessage = "Enter the short pairing code from the host."
+            return
+        }
+
+        isClaimingPairing = true
+        pairingErrorMessage = nil
+        defer { isClaimingPairing = false }
+
+        do {
+            connectionDraft = try await pairingBrokerClient.claim(
+                discovery: discoveredHost,
+                code: code
+            )
             connectionState = .disconnected
             await connect()
+            pairingCodeInput = ""
         } catch {
-            connectionState = .failed(error.localizedDescription)
+            pairingErrorMessage = error.localizedDescription
+        }
+    }
+
+    func importPairingLink(_ rawValue: String) async {
+        do {
+            let payload = try PairingLink.parse(rawValue)
+            discoveryInput = payload.discoveryURL
+            await discoverHost()
+            if let code = payload.code, !code.isEmpty {
+                pairingCodeInput = code
+                await claimDiscoveredHost()
+            }
+        } catch {
+            pairingErrorMessage = error.localizedDescription
         }
     }
 
@@ -229,6 +298,7 @@ final class AppModel {
         hostAppearance = HostAppearanceSnapshot(themeName: nil)
         connectionState = .disconnected
         bannerMessage = nil
+        pairingErrorMessage = nil
         connectionDraft.authToken = ""
     }
 

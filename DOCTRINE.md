@@ -19,8 +19,9 @@ this app is allowed to be.
 
 ## 1. Protocol Boundary
 
-- The app speaks the real app-server JSON-RPC protocol.
-- No bespoke mobile protocol.
+- Live session state uses the real app-server JSON-RPC protocol.
+- Pairing bootstrap may use a small discovery-and-claim flow owned by the
+  companion plugin.
 - No duplicated server business logic in Swift.
 - If the host model changes, the client adapts to the host contract rather than
   inventing local truth.
@@ -65,7 +66,7 @@ this app is allowed to be.
 These must remain true:
 
 1. Host app-server remains the authority.
-2. No side protocol is introduced.
+2. Pairing bootstrap stays narrow and separate from live session protocol.
 3. Remote pairing stays authenticated.
 4. Tailscale/private overlay is preferred over public exposure.
 5. Secrets are not logged.
