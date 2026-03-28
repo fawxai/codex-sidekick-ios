@@ -1,0 +1,50 @@
+name: CodexSidekick
+
+options:
+  minimumXcodeGenVersion: 2.38.0
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    IPHONEOS_DEPLOYMENT_TARGET: 17.0
+    CODE_SIGN_STYLE: Automatic
+    TARGETED_DEVICE_FAMILY: 1,2
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    SWIFT_EMIT_LOC_STRINGS: NO
+
+targets:
+  CodexSidekick:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: CodexSidekick
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openai.codex-sidekick
+        PRODUCT_NAME: CodexSidekick
+        GENERATE_INFOPLIST_FILE: YES
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.1.0
+        INFOPLIST_KEY_CFBundleDisplayName: Codex Sidekick
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchStoryboardName: LaunchScreen
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        DEVELOPMENT_ASSET_PATHS: ""
+
+schemes:
+  CodexSidekick:
+    build:
+      targets:
+        CodexSidekick: all
