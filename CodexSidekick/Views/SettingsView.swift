@@ -210,7 +210,7 @@ struct SettingsView: View {
                 LazyVGrid(columns: buttonColumns, spacing: 10) {
                     Button("Refresh Host Theme") {
                         Task {
-                            await appModel.refreshHostAppearance()
+                            await appModel.refreshHostConfigSnapshot()
                         }
                     }
                     .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))

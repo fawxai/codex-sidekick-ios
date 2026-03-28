@@ -42,6 +42,28 @@ struct ConfigReadResponse: Decodable, Sendable {
     let config: HostConfigSnapshot
 }
 
+enum ConfigMergeStrategy: String, Encodable, Sendable {
+    case replace
+    case upsert
+}
+
+struct ConfigEdit: Encodable, Sendable {
+    let keyPath: String
+    let value: JSONValue
+    let mergeStrategy: ConfigMergeStrategy
+}
+
+struct ConfigBatchWriteParams: Encodable, Sendable {
+    let edits: [ConfigEdit]
+    let filePath: String?
+    let expectedVersion: String?
+    let reloadUserConfig: Bool
+}
+
+struct ConfigWriteResponse: Decodable, Sendable {
+    let version: String
+}
+
 struct HostConfigSnapshot: Decodable, Sendable {
     let raw: [String: JSONValue]
 
@@ -58,6 +80,26 @@ extension HostConfigSnapshot {
             return nil
         }
         return themeName
+    }
+
+    var modelName: String? {
+        raw["model"]?.stringValue
+    }
+
+    var modelProviderName: String? {
+        raw["model_provider"]?.stringValue
+    }
+
+    var reasoningEffortName: String? {
+        raw["model_reasoning_effort"]?.stringValue
+    }
+
+    var sandboxModeName: String? {
+        raw["sandbox_mode"]?.stringValue
+    }
+
+    var approvalPolicyValue: JSONValue? {
+        raw["approval_policy"]
     }
 }
 
@@ -216,6 +258,7 @@ struct CodexThread: Decodable, Identifiable, Sendable {
     var cwd: String
     var agentNickname: String?
     var agentRole: String?
+    var gitInfo: CodexGitInfo?
     var name: String?
     var turns: [CodexTurn]
 
@@ -230,6 +273,7 @@ struct CodexThread: Decodable, Identifiable, Sendable {
         case cwd
         case agentNickname
         case agentRole
+        case gitInfo
         case name
         case turns
     }
@@ -245,6 +289,7 @@ struct CodexThread: Decodable, Identifiable, Sendable {
         cwd: String,
         agentNickname: String?,
         agentRole: String?,
+        gitInfo: CodexGitInfo?,
         name: String?,
         turns: [CodexTurn]
     ) {
@@ -258,6 +303,7 @@ struct CodexThread: Decodable, Identifiable, Sendable {
         self.cwd = cwd
         self.agentNickname = agentNickname
         self.agentRole = agentRole
+        self.gitInfo = gitInfo
         self.name = name
         self.turns = turns
     }
@@ -274,9 +320,16 @@ struct CodexThread: Decodable, Identifiable, Sendable {
         cwd = try container.decodeIfPresent(String.self, forKey: .cwd) ?? ""
         agentNickname = try container.decodeIfPresent(String.self, forKey: .agentNickname)
         agentRole = try container.decodeIfPresent(String.self, forKey: .agentRole)
+        gitInfo = try container.decodeIfPresent(CodexGitInfo.self, forKey: .gitInfo)
         name = try container.decodeIfPresent(String.self, forKey: .name)
         turns = try container.decodeIfPresent([CodexTurn].self, forKey: .turns) ?? []
     }
+}
+
+struct CodexGitInfo: Decodable, Sendable {
+    let sha: String?
+    let branch: String?
+    let originURL: String?
 }
 
 extension CodexThread {
@@ -632,6 +685,33 @@ struct ThreadStatusChangedNotification: Decodable, Sendable {
     let status: ThreadStatus
 }
 
+struct TokenUsageBreakdown: Decodable, Sendable {
+    let totalTokens: Int
+    let inputTokens: Int
+    let cachedInputTokens: Int
+    let outputTokens: Int
+    let reasoningOutputTokens: Int
+}
+
+struct ThreadTokenUsage: Decodable, Sendable {
+    let total: TokenUsageBreakdown
+    let last: TokenUsageBreakdown
+    let modelContextWindow: Int?
+
+    var contextUsagePercent: Double? {
+        guard let modelContextWindow, modelContextWindow > 0 else {
+            return nil
+        }
+        return min(max(Double(total.totalTokens) / Double(modelContextWindow), 0), 1)
+    }
+}
+
+struct ThreadTokenUsageUpdatedNotification: Decodable, Sendable {
+    let threadId: String
+    let turnId: String
+    let tokenUsage: ThreadTokenUsage
+}
+
 struct ThreadNameUpdatedNotification: Decodable, Sendable {
     let threadId: String
     let threadName: String?
@@ -677,6 +757,32 @@ struct AgentMessageDeltaNotification: Decodable, Sendable {
 struct ServerRequestResolvedNotification: Decodable, Sendable {
     let threadId: String
     let requestId: RPCID
+}
+
+struct RateLimitWindow: Decodable, Sendable {
+    let usedPercent: Int
+    let windowDurationMins: Int?
+    let resetsAt: Int?
+
+    var remainingPercent: Int {
+        max(0, 100 - usedPercent)
+    }
+}
+
+struct RateLimitSnapshot: Decodable, Sendable {
+    let limitId: String?
+    let limitName: String?
+    let primary: RateLimitWindow?
+    let secondary: RateLimitWindow?
+}
+
+struct GetAccountRateLimitsResponse: Decodable, Sendable {
+    let rateLimits: RateLimitSnapshot
+    let rateLimitsByLimitId: [String: RateLimitSnapshot]?
+}
+
+struct AccountRateLimitsUpdatedNotification: Decodable, Sendable {
+    let rateLimits: RateLimitSnapshot
 }
 
 struct NetworkApprovalContext: Decodable, Sendable {

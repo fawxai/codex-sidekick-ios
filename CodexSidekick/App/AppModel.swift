@@ -66,6 +66,23 @@ final class AppModel {
         var cwd: String?
     }
 
+    enum PermissionPreset: Equatable, Sendable {
+        case defaultPermissions
+        case fullAccess
+        case customConfig
+
+        var label: String {
+            switch self {
+            case .defaultPermissions:
+                return "Default permissions"
+            case .fullAccess:
+                return "Full access"
+            case .customConfig:
+                return "Custom"
+            }
+        }
+    }
+
     var connectionDraft = ConnectionDraft()
     var discoveryInput = ""
     var pairingCodeInput = ""
@@ -80,6 +97,13 @@ final class AppModel {
     var pendingApprovals: [PendingApproval] = []
     var appearanceSettings = SidekickAppearanceSettings()
     var hostAppearance = HostAppearanceSnapshot(themeName: nil)
+    var hostModelName: String?
+    var hostModelProviderName: String?
+    var hostReasoningEffortName: String?
+    var hostSandboxModeName: String?
+    var hostApprovalPolicyValue: JSONValue?
+    var accountRateLimits: RateLimitSnapshot?
+    var threadTokenUsageByThreadID: [String: ThreadTokenUsage] = [:]
     var isBootstrapping = false
     var isDiscoveringHost = false
     var isClaimingPairing = false
@@ -134,6 +158,24 @@ final class AppModel {
             return pairedConnection?.websocketURL ?? "Unpaired"
         }
         return host
+    }
+
+    var hostPermissionPreset: PermissionPreset {
+        let normalizedSandboxMode = hostSandboxModeName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let approvalPolicyValue = hostApprovalPolicyValue
+
+        if normalizedSandboxMode == nil, approvalPolicyValue == nil {
+            return .defaultPermissions
+        }
+
+        if normalizedSandboxMode == "danger-full-access",
+           approvalPolicyValue?.stringValue?.lowercased() == "never" {
+            return .fullAccess
+        }
+
+        return .customConfig
     }
 
     func bootstrap() async {
@@ -213,7 +255,8 @@ final class AppModel {
             self.connectionState = .connected
             startListening(to: eventStream)
             await refreshThreads()
-            await refreshHostAppearance()
+            await refreshHostConfigSnapshot()
+            await refreshAccountRateLimits()
         } catch {
             self.connectionState = .failed(error.localizedDescription)
         }
@@ -302,6 +345,13 @@ final class AppModel {
         selectedThreadID = nil
         pendingApprovals = []
         hostAppearance = HostAppearanceSnapshot(themeName: nil)
+        hostModelName = nil
+        hostModelProviderName = nil
+        hostReasoningEffortName = nil
+        hostSandboxModeName = nil
+        hostApprovalPolicyValue = nil
+        accountRateLimits = nil
+        threadTokenUsageByThreadID = [:]
         connectionState = .disconnected
         bannerMessage = nil
         pairingErrorMessage = nil
@@ -400,6 +450,12 @@ final class AppModel {
         guard let selectedThreadID else { return }
         let text = handoffDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        await sendHandoff(input: [.text(text)])
+    }
+
+    func sendHandoff(input: [UserInputPayload]) async {
+        guard let selectedThreadID else { return }
+        guard !input.isEmpty else { return }
         guard let transport else { return }
 
         do {
@@ -408,7 +464,7 @@ final class AppModel {
                 method: "turn/start",
                 params: TurnStartParams(
                     threadId: selectedThreadID,
-                    input: [.text(text)]
+                    input: input
                 ),
                 as: TurnStartResponse.self
             )
@@ -417,6 +473,49 @@ final class AppModel {
         } catch {
             bannerMessage = "Could not send handoff: \(error.localizedDescription)"
         }
+    }
+
+    func setHostModel(_ model: String) async {
+        await writeConfigEdit(
+            keyPath: "model",
+            value: .string(model)
+        )
+    }
+
+    func setHostReasoningEffort(_ effort: String) async {
+        await writeConfigEdit(
+            keyPath: "model_reasoning_effort",
+            value: .string(effort)
+        )
+    }
+
+    func setHostPermissionPreset(_ preset: PermissionPreset) async {
+        switch preset {
+        case .defaultPermissions:
+            await writeConfigEdits([
+                ConfigEdit(keyPath: "sandbox_mode", value: .null, mergeStrategy: .replace),
+                ConfigEdit(keyPath: "approval_policy", value: .null, mergeStrategy: .replace)
+            ])
+        case .fullAccess:
+            await writeConfigEdits([
+                ConfigEdit(
+                    keyPath: "sandbox_mode",
+                    value: .string("danger-full-access"),
+                    mergeStrategy: .replace
+                ),
+                ConfigEdit(
+                    keyPath: "approval_policy",
+                    value: .string("never"),
+                    mergeStrategy: .replace
+                )
+            ])
+        case .customConfig:
+            bannerMessage = "Custom permission mode is managed by the host config."
+        }
+    }
+
+    func threadTokenUsage(for threadID: String) -> ThreadTokenUsage? {
+        threadTokenUsageByThreadID[threadID]
     }
 
     func approveCommand(_ approval: PendingApproval, sessionScope: Bool) async {
@@ -485,9 +584,14 @@ final class AppModel {
             ?? "Thread"
     }
 
-    func refreshHostAppearance() async {
+    func refreshHostConfigSnapshot() async {
         guard let transport else {
             hostAppearance = HostAppearanceSnapshot(themeName: nil)
+            hostModelName = nil
+            hostModelProviderName = nil
+            hostReasoningEffortName = nil
+            hostSandboxModeName = nil
+            hostApprovalPolicyValue = nil
             return
         }
 
@@ -498,8 +602,35 @@ final class AppModel {
                 as: ConfigReadResponse.self
             )
             hostAppearance = HostAppearanceSnapshot(themeName: response.config.tuiThemeName)
+            hostModelName = response.config.modelName
+            hostModelProviderName = response.config.modelProviderName
+            hostReasoningEffortName = response.config.reasoningEffortName
+            hostSandboxModeName = response.config.sandboxModeName
+            hostApprovalPolicyValue = response.config.approvalPolicyValue
         } catch {
             hostAppearance = HostAppearanceSnapshot(themeName: nil)
+            hostModelName = nil
+            hostModelProviderName = nil
+            hostReasoningEffortName = nil
+            hostSandboxModeName = nil
+            hostApprovalPolicyValue = nil
+        }
+    }
+
+    func refreshAccountRateLimits() async {
+        guard let transport else {
+            accountRateLimits = nil
+            return
+        }
+
+        do {
+            let response: GetAccountRateLimitsResponse = try await transport.request(
+                method: "account/rateLimits/read",
+                as: GetAccountRateLimitsResponse.self
+            )
+            accountRateLimits = response.rateLimits
+        } catch {
+            accountRateLimits = nil
         }
     }
 
@@ -518,7 +649,7 @@ final class AppModel {
         persistAppearance()
         if isEnabled {
             Task {
-                await refreshHostAppearance()
+                await refreshHostConfigSnapshot()
             }
         }
     }
@@ -554,6 +685,39 @@ final class AppModel {
         )
         storeThread(response.thread)
         connectionState = .connected
+    }
+
+    private func writeConfigEdit(keyPath: String, value: JSONValue) async {
+        await writeConfigEdits([
+            ConfigEdit(
+                keyPath: keyPath,
+                value: value,
+                mergeStrategy: .replace
+            )
+        ])
+    }
+
+    private func writeConfigEdits(_ edits: [ConfigEdit]) async {
+        guard let transport else {
+            bannerMessage = "Connect to Codex before updating host settings."
+            return
+        }
+
+        do {
+            let _: ConfigWriteResponse = try await transport.request(
+                method: "config/batchWrite",
+                params: ConfigBatchWriteParams(
+                    edits: edits,
+                    filePath: nil,
+                    expectedVersion: nil,
+                    reloadUserConfig: true
+                ),
+                as: ConfigWriteResponse.self
+            )
+            await refreshHostConfigSnapshot()
+        } catch {
+            bannerMessage = "Could not update host config: \(error.localizedDescription)"
+        }
     }
 
     private func startListening(to eventStream: AsyncStream<CodexTransportEvent>) {
@@ -614,6 +778,8 @@ final class AppModel {
             mutateThread(payload.threadId) { thread in
                 thread.name = payload.threadName
             }
+        case .threadTokenUsageUpdated(let payload):
+            threadTokenUsageByThreadID[payload.threadId] = payload.tokenUsage
         case .threadArchived(let payload):
             removeThread(payload.threadId)
         case .threadUnarchived:
@@ -640,6 +806,8 @@ final class AppModel {
             )
         case .serverRequestResolved(let payload):
             pendingApprovals.removeAll(where: { $0.requestID == payload.requestId })
+        case .accountRateLimitsUpdated(let payload):
+            accountRateLimits = payload.rateLimits
         }
     }
 
