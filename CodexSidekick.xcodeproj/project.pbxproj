@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0CF76808E876E39A09B180E2 /* PairingBrokerHTTPTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 630D8C4948B541C8AF0B9292 /* PairingBrokerHTTPTransport.swift */; };
 		19848E593A968AB7DAFA4026 /* PairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EFFBB9586ABE060BB1088C2 /* PairingStore.swift */; };
 		1ADDBB6F50EE858AF8580104 /* ApprovalInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 767A7CCB7495F39D242439C6 /* ApprovalInboxView.swift */; };
 		1D0EFCEAE442D2CBB55B4AFE /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E17BF788E737F5BF8B2975B /* AppModel.swift */; };
@@ -43,6 +44,7 @@
 		3079677C3573086951C314DC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3E17BF788E737F5BF8B2975B /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		598B5853A21F48D6C49C735F /* PairingBrokerAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingBrokerAPI.swift; sourceTree = "<group>"; };
+		630D8C4948B541C8AF0B9292 /* PairingBrokerHTTPTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingBrokerHTTPTransport.swift; sourceTree = "<group>"; };
 		767A7CCB7495F39D242439C6 /* ApprovalInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalInboxView.swift; sourceTree = "<group>"; };
 		7EF8DECE1DB42C3BCE6D3BF3 /* JSONRPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONRPC.swift; sourceTree = "<group>"; };
 		84C4B50312C299C09854A827 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -84,6 +86,7 @@
 				924EEECBCC939723AD3C035E /* ConnectionEndpoint.swift */,
 				7EF8DECE1DB42C3BCE6D3BF3 /* JSONRPC.swift */,
 				598B5853A21F48D6C49C735F /* PairingBrokerAPI.swift */,
+				630D8C4948B541C8AF0B9292 /* PairingBrokerHTTPTransport.swift */,
 				DD9563AE324E798609EC70F5 /* PairingLink.swift */,
 				8EFFBB9586ABE060BB1088C2 /* PairingStore.swift */,
 			);
@@ -225,6 +228,7 @@
 				C49DA7AAA5C719CFFD319886 /* DisplayPrimitives.swift in Sources */,
 				B8C0ED542DF4B4260572846B /* JSONRPC.swift in Sources */,
 				D65EE6C2A13452DCBA9DB9F0 /* PairingBrokerAPI.swift in Sources */,
+				0CF76808E876E39A09B180E2 /* PairingBrokerHTTPTransport.swift in Sources */,
 				77DD0574A75DDB4168035CA0 /* PairingLink.swift in Sources */,
 				19848E593A968AB7DAFA4026 /* PairingStore.swift in Sources */,
 				982D2E0DCD0E889A5D358EE2 /* PairingView.swift in Sources */,

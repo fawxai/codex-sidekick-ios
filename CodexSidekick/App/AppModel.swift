@@ -245,29 +245,6 @@ final class AppModel {
         await connect()
     }
 
-    func discoverHost() async {
-        let discoveryTarget = discoveryInput
-        guard !discoveryTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            pairingErrorMessage = "Enter a `.ts.net` host, a Tailscale IP, or a full discovery URL."
-            return
-        }
-
-        isDiscoveringHost = true
-        clearRetryState(resetDiscoveredHost: true, resetPairingCode: false)
-        defer { isDiscoveringHost = false }
-
-        do {
-            let discoveredHost = try await pairingBrokerClient.discover(from: discoveryTarget)
-            self.discoveredHost = discoveredHost
-            connectionDraft.websocketURL = discoveredHost.websocketURL
-            if connectionDraft.normalizedAuthToken.isEmpty {
-                connectionDraft.authToken = ""
-            }
-        } catch {
-            pairingErrorMessage = error.localizedDescription
-        }
-    }
-
     func pairWithDiscoveryCode() async {
         let discoveryTarget = discoveryInput
         guard !discoveryTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -283,48 +260,19 @@ final class AppModel {
 
         isDiscoveringHost = true
         isClaimingPairing = true
-        clearRetryState(resetDiscoveredHost: true, resetPairingCode: false)
+        clearRetryState(resetDiscoveredHost: false, resetPairingCode: false)
         defer {
             isDiscoveringHost = false
             isClaimingPairing = false
         }
 
         do {
-            let discoveredHost = try await pairingBrokerClient.discover(from: discoveryTarget)
-            self.discoveredHost = discoveredHost
-            connectionDraft = try await pairingBrokerClient.claim(
-                discovery: discoveredHost,
+            let bootstrap = try await pairingBrokerClient.redeemDiscoveryCode(
+                from: discoveryTarget,
                 code: code
             )
-            connectionState = .disconnected
-            await connect()
-            pairingCodeInput = ""
-        } catch {
-            pairingErrorMessage = error.localizedDescription
-        }
-    }
-
-    func claimDiscoveredHost() async {
-        guard let discoveredHost else {
-            pairingErrorMessage = "Discover a Codex host before entering a pairing code."
-            return
-        }
-
-        let code = pairingCodeInput
-        guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            pairingErrorMessage = "Enter the short pairing code from the host."
-            return
-        }
-
-        isClaimingPairing = true
-        pairingErrorMessage = nil
-        defer { isClaimingPairing = false }
-
-        do {
-            connectionDraft = try await pairingBrokerClient.claim(
-                discovery: discoveredHost,
-                code: code
-            )
+            discoveredHost = bootstrap.discovery
+            connectionDraft = bootstrap.draft
             connectionState = .disconnected
             await connect()
             pairingCodeInput = ""
@@ -341,7 +289,16 @@ final class AppModel {
                 pairingCodeInput = code
                 await pairWithDiscoveryCode()
             } else {
-                await discoverHost()
+                isDiscoveringHost = true
+                clearRetryState(resetDiscoveredHost: false, resetPairingCode: false)
+                defer { isDiscoveringHost = false }
+
+                let discoveredHost = try await pairingBrokerClient.discover(from: payload.discoveryURL)
+                self.discoveredHost = discoveredHost
+                connectionDraft.websocketURL = discoveredHost.websocketURL
+                if connectionDraft.normalizedAuthToken.isEmpty {
+                    connectionDraft.authToken = ""
+                }
             }
         } catch {
             pairingErrorMessage = error.localizedDescription

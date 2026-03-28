@@ -179,7 +179,9 @@ struct PairingView: View {
     }
 
     private var tailscaleDiscoverySection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let isBusy = appModel.isBusyPairing
+
+        return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Discovery Target")
                     .font(theme.codeFont(10, weight: .semibold))
@@ -189,6 +191,12 @@ struct PairingView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .sidekickInputFieldStyle()
+
+                if let discoverySecurityWarning {
+                    Text(discoverySecurityWarning)
+                        .font(theme.codeFont(11, weight: .medium))
+                        .foregroundStyle(theme.warning)
+                }
             }
 
             if let discoveredHost = appModel.discoveredHost {
@@ -212,19 +220,19 @@ struct PairingView: View {
                         }
                     } label: {
                         HStack(spacing: 10) {
-                            if appModel.isDiscoveringHost || appModel.isClaimingPairing || appModel.isConnecting {
+                            if isBusy {
                                 ProgressView()
                                     .tint(theme.backgroundBottom)
                             }
 
-                            Text(appModel.isDiscoveringHost || appModel.isClaimingPairing || appModel.isConnecting ? "Pairing..." : "Pair with Codex")
+                            Text(isBusy ? "Pairing..." : "Pair with Codex")
                         }
                     }
                     .buttonStyle(SidekickActionButtonStyle(tone: .primary, fullWidth: true))
                     .disabled(
                         appModel.discoveryInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             || appModel.pairingCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || appModel.isBusyPairing
+                            || isBusy
                     )
                 }
             }
@@ -414,6 +422,33 @@ struct PairingView: View {
 
     private var discoveryPlaceholder: String {
         "your-mac.tailnet.ts.net, 100.x.y.z, or a full /v1/discover URL"
+    }
+
+    private var discoverySecurityWarning: String? {
+        let trimmedInput = appModel.discoveryInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInput.isEmpty else {
+            return nil
+        }
+
+        let rawURLString: String
+        if trimmedInput.contains("://") {
+            rawURLString = trimmedInput
+        } else {
+            rawURLString = "http://\(trimmedInput)"
+        }
+
+        guard let url = URL(string: rawURLString),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "ws" else {
+            return nil
+        }
+
+        let hostKind = SidekickHostKind(host: url.host)
+        guard hostKind == .remote else {
+            return nil
+        }
+
+        return "Public discovery targets must use https://. Cleartext discovery is only allowed for local or tailnet hosts."
     }
 
     private var urlPlaceholder: String {
