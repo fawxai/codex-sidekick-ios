@@ -4,18 +4,6 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
-    struct Banner: Equatable, Sendable {
-        enum Tone: Equatable, Sendable {
-            case neutral
-            case warning
-            case danger
-            case success
-        }
-
-        let message: String
-        let tone: Tone
-    }
-
     enum ConnectionState: Equatable {
         case disconnected
         case connecting
@@ -71,6 +59,12 @@ final class AppModel {
                 return "Codex wants to apply file edits."
             }
         }
+    }
+
+    private struct ConnectionEndpoint: Sendable {
+        let draft: ConnectionDraft
+        let websocketURL: String
+        let authToken: String
     }
 
     var connectionDraft = ConnectionDraft() {
@@ -146,7 +140,7 @@ final class AppModel {
     var isBootstrapping = false
     var isDiscoveringHost = false
     var isClaimingPairing = false
-    var banner: Banner?
+    var banner: BannerState?
     var pairingErrorMessage: String?
 
     private let pairingStore = PairingStore()
@@ -245,37 +239,7 @@ final class AppModel {
     }
 
     func connect() async {
-        let draft = connectionDraft
-        let websocketURL = draft.normalizedWebsocketURL
-        let authToken = draft.normalizedAuthToken
-
-        guard !websocketURL.isEmpty else {
-            connectionState = .failed("Enter a websocket URL for `codex app-server`.")
-            return
-        }
-
-        guard let url = URL(string: websocketURL) else {
-            connectionState = .failed("That websocket URL is not valid.")
-            return
-        }
-
-        let endpointKind = SidekickConnectionEndpointKind(url: url)
-        if endpointKind == .invalid {
-            connectionState = .failed("Use a valid `ws://` or `wss://` websocket URL.")
-            return
-        }
-
-        if endpointKind.requiresBearerToken && authToken.isEmpty {
-            connectionState = .failed(
-                "Tailscale pairing requires a bearer token from the host."
-            )
-            return
-        }
-
-        if !authToken.isEmpty, !endpointKind.supportsBearerToken(scheme: url.scheme) {
-            connectionState = .failed(
-                "Bearer tokens require `wss://` for manual remote hosts. For Tailscale, use a `.ts.net` hostname or Tailscale IP."
-            )
+        guard let endpoint = validateConnectionState() else {
             return
         }
 
@@ -287,8 +251,8 @@ final class AppModel {
         do {
             let transport = CodexTransport()
             let (initializeResponse, eventStream) = try await transport.connect(
-                websocketURL: websocketURL,
-                authToken: authToken.isEmpty ? nil : authToken,
+                websocketURL: endpoint.websocketURL,
+                authToken: endpoint.authToken.isEmpty ? nil : endpoint.authToken,
                 clientName: "codex_sidekick_ios",
                 clientTitle: "Codex Sidekick iOS",
                 clientVersion: "0.1.0"
@@ -296,7 +260,7 @@ final class AppModel {
 
             self.transport = transport
             self.initializeResponse = initializeResponse
-            self.pairedConnection = try pairingStore.save(draft)
+            self.pairedConnection = try pairingStore.save(endpoint.draft)
             self.connectionState = .connected
             startListening(to: eventStream)
             await refreshThreads()
@@ -305,6 +269,48 @@ final class AppModel {
         } catch {
             self.connectionState = .failed(error.localizedDescription)
         }
+    }
+
+    private func validateConnectionState() -> ConnectionEndpoint? {
+        let draft = connectionDraft
+        let websocketURL = draft.normalizedWebsocketURL
+        let authToken = draft.normalizedAuthToken
+
+        guard !websocketURL.isEmpty else {
+            connectionState = .failed("Enter a websocket URL for `codex app-server`.")
+            return nil
+        }
+
+        guard let url = URL(string: websocketURL) else {
+            connectionState = .failed("That websocket URL is not valid.")
+            return nil
+        }
+
+        let endpointKind = SidekickConnectionEndpointKind(url: url)
+        if endpointKind == .invalid {
+            connectionState = .failed("Use a valid `ws://` or `wss://` websocket URL.")
+            return nil
+        }
+
+        if endpointKind.requiresBearerToken && authToken.isEmpty {
+            connectionState = .failed(
+                "Tailscale pairing requires a bearer token from the host."
+            )
+            return nil
+        }
+
+        if !authToken.isEmpty, !endpointKind.supportsBearerToken(scheme: url.scheme) {
+            connectionState = .failed(
+                "Bearer tokens require `wss://` for manual remote hosts. For Tailscale, use a `.ts.net` hostname or Tailscale IP."
+            )
+            return nil
+        }
+
+        return ConnectionEndpoint(
+            draft: draft,
+            websocketURL: websocketURL,
+            authToken: authToken
+        )
     }
 
     func reconnect() async {
@@ -1008,7 +1014,7 @@ final class AppModel {
         }
     }
 
-    private func showBanner(_ message: String, tone: Banner.Tone) {
-        banner = Banner(message: message, tone: tone)
+    private func showBanner(_ message: String, tone: StatusTone) {
+        banner = BannerState(message: message, tone: tone)
     }
 }

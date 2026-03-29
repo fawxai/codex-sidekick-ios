@@ -512,7 +512,7 @@ struct ThreadRowCard: View {
 
                 Spacer(minLength: 10)
 
-                StatusPill(text: thread.status.label, tone: tone(for: thread.status))
+                StatusPill(text: thread.status.label, tone: thread.status.tone)
             }
             .font(theme.codeFont(10))
             .foregroundStyle(theme.textTertiary)
@@ -536,17 +536,6 @@ struct ThreadRowCard: View {
 
     private var relativeDateString: String {
         Self.relativeDateFormatter.localizedString(for: thread.updatedDate, relativeTo: .now)
-    }
-
-    private func tone(for status: ThreadStatus) -> StatusTone {
-        switch status {
-        case .notLoaded, .idle:
-            return .neutral
-        case .systemError:
-            return .danger
-        case .active(let flags):
-            return flags.contains(.waitingOnApproval) ? .warning : .success
-        }
     }
 }
 

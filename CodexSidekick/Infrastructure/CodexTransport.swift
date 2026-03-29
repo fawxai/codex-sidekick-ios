@@ -46,7 +46,7 @@ actor CodexTransport {
     private var websocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<CodexTransportEvent>.Continuation?
-    private var pendingResponses: [RPCID: CheckedContinuation<JSONValue, Error>] = [:]
+    private var pendingResponses: [RPCID: AsyncThrowingStream<JSONValue, Error>.Continuation] = [:]
     private var nextRequestID = 1
 
     init(session: URLSession = .shared) {
@@ -108,7 +108,7 @@ actor CodexTransport {
 
     func disconnect() async throws {
         for (_, continuation) in pendingResponses {
-            continuation.resume(throwing: CancellationError())
+            continuation.finish(throwing: CancellationError())
         }
         pendingResponses.removeAll()
         receiveTask?.cancel()
@@ -127,22 +127,14 @@ actor CodexTransport {
         let requestID = RPCID.integer(nextRequestID)
         nextRequestID += 1
 
-        let rawResult: JSONValue = try await withCheckedThrowingContinuation { continuation in
-            pendingResponses[requestID] = continuation
-            Task {
-                do {
-                    try await self.send(
-                        JSONRPCRequestEnvelope(
-                            id: requestID,
-                            method: method,
-                            params: params
-                        )
-                    )
-                } catch {
-                    self.failPendingResponse(id: requestID, error: error)
-                }
-            }
-        }
+        let rawResult = try await sendRequest(
+            id: requestID,
+            envelope: JSONRPCRequestEnvelope(
+                id: requestID,
+                method: method,
+                params: params
+            )
+        )
 
         return try rawResult.decoded(as: Response.self, using: decoder)
     }
@@ -154,22 +146,14 @@ actor CodexTransport {
         let requestID = RPCID.integer(nextRequestID)
         nextRequestID += 1
 
-        let rawResult: JSONValue = try await withCheckedThrowingContinuation { continuation in
-            pendingResponses[requestID] = continuation
-            Task {
-                do {
-                    try await self.send(
-                        JSONRPCRequestEnvelope<JSONValue?>(
-                            id: requestID,
-                            method: method,
-                            params: nil
-                        )
-                    )
-                } catch {
-                    self.failPendingResponse(id: requestID, error: error)
-                }
-            }
-        }
+        let rawResult = try await sendRequest(
+            id: requestID,
+            envelope: JSONRPCRequestEnvelope<JSONValue?>(
+                id: requestID,
+                method: method,
+                params: nil
+            )
+        )
 
         return try rawResult.decoded(as: Response.self, using: decoder)
     }
@@ -189,6 +173,41 @@ actor CodexTransport {
                 error: JSONRPCErrorBody(code: code, data: nil, message: message)
             )
         )
+    }
+
+    private func sendRequest<Envelope: Encodable>(
+        id: RPCID,
+        envelope: Envelope
+    ) async throws -> JSONValue {
+        let (responseStream, continuation) = makePendingResponse()
+        pendingResponses[id] = continuation
+
+        do {
+            try await send(envelope)
+        } catch {
+            failPendingResponse(id: id, error: error)
+            throw error
+        }
+
+        var iterator = responseStream.makeAsyncIterator()
+        guard let rawResult = try await iterator.next() else {
+            throw CancellationError()
+        }
+        return rawResult
+    }
+
+    private func makePendingResponse() -> (
+        AsyncThrowingStream<JSONValue, Error>,
+        AsyncThrowingStream<JSONValue, Error>.Continuation
+    ) {
+        var continuation: AsyncThrowingStream<JSONValue, Error>.Continuation?
+        let stream = AsyncThrowingStream<JSONValue, Error> { continuation = $0 }
+
+        guard let continuation else {
+            preconditionFailure("Pending response continuation was not created.")
+        }
+
+        return (stream, continuation)
     }
 
     private func send<Envelope: Encodable>(_ envelope: Envelope) async throws {
@@ -332,13 +351,14 @@ actor CodexTransport {
         guard let continuation = pendingResponses.removeValue(forKey: id) else {
             return
         }
-        continuation.resume(returning: result)
+        continuation.yield(result)
+        continuation.finish()
     }
 
     private func failPendingResponse(id: RPCID, error: Error) {
         guard let continuation = pendingResponses.removeValue(forKey: id) else {
             return
         }
-        continuation.resume(throwing: error)
+        continuation.finish(throwing: error)
     }
 }

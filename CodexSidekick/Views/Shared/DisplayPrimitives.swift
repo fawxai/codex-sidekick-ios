@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum StatusTone {
+enum StatusTone: Equatable, Sendable {
     case neutral
     case accent
     case success
@@ -8,19 +8,9 @@ enum StatusTone {
     case danger
 }
 
-extension AppModel.Banner.Tone {
-    var statusTone: StatusTone {
-        switch self {
-        case .neutral:
-            return .neutral
-        case .warning:
-            return .warning
-        case .danger:
-            return .danger
-        case .success:
-            return .success
-        }
-    }
+struct BannerState: Equatable, Sendable {
+    let message: String
+    let tone: StatusTone
 }
 
 enum SidekickSection: String, CaseIterable, Identifiable {

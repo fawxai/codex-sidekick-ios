@@ -158,7 +158,7 @@ struct ThreadDetailView: View {
                         )
 
                         if let banner = appModel.banner {
-                            BannerCard(message: banner.message, tone: banner.tone.statusTone)
+                            BannerCard(message: banner.message, tone: banner.tone)
                         }
 
                         ThreadTimelineView(thread: thread)
@@ -235,153 +235,31 @@ struct ThreadDetailView: View {
     }
 
     private var handoffComposer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TextField(
-                "",
-                text: $appModel.handoffDraft,
-                prompt: Text("Tell Codex what to pick up next...")
-                    .foregroundStyle(theme.textTertiary),
-                axis: .vertical
-            )
-            .font(theme.codeFont(13))
-            .foregroundStyle(theme.textPrimary)
-            .textFieldStyle(.plain)
-            .lineLimit(1 ... 3)
-            .focused($isComposerFocused)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-
-            Divider()
-                .overlay(theme.divider)
-
-            if let composerUtilityNote, !composerUtilityNote.isEmpty {
-                Text(composerUtilityNote)
-                    .font(theme.codeFont(10))
-                    .foregroundStyle(theme.textTertiary)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
+        HandoffComposerView(
+            handoffDraft: $appModel.handoffDraft,
+            composerUtilityNote: composerUtilityNote,
+            isComposerFocused: $isComposerFocused,
+            isPlanModeEnabled: $isPlanModeEnabled,
+            canSendHandoff: canSendHandoff,
+            composerModelLabel: composerModelLabel,
+            composerReasoningLabel: composerReasoningLabel,
+            composerModelOptions: composerModelOptions,
+            selectedModelSlug: appModel.hostModelName,
+            selectedReasoningOption: selectedReasoningOption,
+            threadNeedsApproval: thread?.status.isWaitingOnApproval == true,
+            pendingApprovalCount: appModel.pendingApprovals.count,
+            pasteFromClipboard: pasteFromClipboard,
+            showComposerUtilityNote: showComposerUtilityNote,
+            selectReasoningOption: selectReasoningOption,
+            selectModelOption: selectModelOption,
+            clearDraft: { appModel.handoffDraft = "" },
+            openApprovals: { selectedSection = .approvals },
+            sendHandoff: {
+                Task {
+                    await appModel.sendHandoff(input: handoffInputPayloads())
+                }
             }
-
-            HStack(spacing: 8) {
-                Menu {
-                    Button("Paste from Clipboard", action: pasteFromClipboard)
-
-                    Button("Add photos & files") {
-                        showComposerUtilityNote("Remote photo and file attachments are not wired through the host protocol yet.")
-                    }
-
-                    Toggle("Plan mode", isOn: $isPlanModeEnabled)
-
-                    Menu("Speed") {
-                        ComposerReasoningMenuContent(
-                            selected: selectedReasoningOption,
-                            select: selectReasoningOption
-                        )
-                    }
-
-                    Menu("Plugins") {
-                        Button("Plugin mentions are not wired on iPhone yet.") {
-                            showComposerUtilityNote("Plugin mentions from the iPhone composer are not wired yet.")
-                        }
-                    }
-
-                    if canSendHandoff {
-                        Button("Clear Draft", role: .destructive) {
-                            appModel.handoffDraft = ""
-                        }
-                    }
-                } label: {
-                    composerIconButton(systemImage: "plus")
-                }
-                .buttonStyle(.plain)
-
-                Menu {
-                    ComposerModelMenuContent(
-                        options: composerModelOptions,
-                        selectedSlug: appModel.hostModelName,
-                        select: selectModelOption
-                    )
-                } label: {
-                    ComposerChip(text: composerModelLabel, showsChevron: true)
-                }
-                .buttonStyle(.plain)
-
-                Menu {
-                    ComposerReasoningMenuContent(
-                        selected: selectedReasoningOption,
-                        select: selectReasoningOption
-                    )
-                } label: {
-                    ComposerChip(text: composerReasoningLabel, showsChevron: true)
-                }
-                .buttonStyle(.plain)
-
-                if isPlanModeEnabled {
-                    ComposerChip(text: "Plan", icon: "list.bullet")
-                }
-
-                if thread?.status.isWaitingOnApproval == true {
-                    ComposerChip(text: "Approval", tone: .warning)
-                }
-
-                if appModel.pendingApprovals.isEmpty == false {
-                    Button {
-                        selectedSection = .approvals
-                    } label: {
-                        ComposerChip(
-                            text: "Review \(appModel.pendingApprovals.count)",
-                            icon: "checklist"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Spacer()
-
-                Button {
-                    isComposerFocused = true
-                    showComposerUtilityNote("Use the keyboard's dictation button after focusing the composer.")
-                } label: {
-                    Image(systemName: "mic")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(theme.textTertiary)
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    Task {
-                        await appModel.sendHandoff(input: handoffInputPayloads())
-                    }
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(canSendHandoff ? sendButtonForeground : theme.textTertiary)
-                        .frame(width: 30, height: 30)
-                        .background(
-                            Circle()
-                                .fill(canSendHandoff ? sendButtonBackground : theme.chromeElevated)
-                        )
-                        .overlay(
-                            Circle()
-                                .stroke(theme.border, lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(canSendHandoff == false)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(theme.backgroundTop.opacity(theme.colorScheme == .dark ? 0.94 : 1))
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(theme.border, lineWidth: 1)
-        )
-        .shadow(color: theme.shadow.opacity(0.35), radius: 10, y: 2)
     }
 
     private var composerFooterBar: some View {
@@ -547,35 +425,6 @@ struct ThreadDetailView: View {
         }
     }
 
-    private func composerIconButton(systemImage: String) -> some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(theme.textPrimary)
-            .frame(width: 28, height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(theme.chromeElevated)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(theme.border, lineWidth: 1)
-            )
-    }
-
-    private var sendButtonBackground: Color {
-        if theme.colorScheme == .light {
-            return theme.chrome
-        }
-        return theme.textPrimary
-    }
-
-    private var sendButtonForeground: Color {
-        if theme.colorScheme == .light {
-            return theme.textPrimary
-        }
-        return theme.backgroundBottom
-    }
-
     private func pasteFromClipboard() {
         guard let clipboardText = UIPasteboard.general.string?
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -658,6 +507,201 @@ struct ThreadDetailView: View {
     }
 }
 
+private struct HandoffComposerView: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    @Binding var handoffDraft: String
+    let composerUtilityNote: String?
+    let isComposerFocused: FocusState<Bool>.Binding
+    @Binding var isPlanModeEnabled: Bool
+    let canSendHandoff: Bool
+    let composerModelLabel: String
+    let composerReasoningLabel: String
+    let composerModelOptions: [ComposerModelOption]
+    let selectedModelSlug: String?
+    let selectedReasoningOption: ComposerReasoningOption?
+    let threadNeedsApproval: Bool
+    let pendingApprovalCount: Int
+    let pasteFromClipboard: () -> Void
+    let showComposerUtilityNote: (String) -> Void
+    let selectReasoningOption: (ComposerReasoningOption) -> Void
+    let selectModelOption: (ComposerModelOption) -> Void
+    let clearDraft: () -> Void
+    let openApprovals: () -> Void
+    let sendHandoff: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TextField(
+                "",
+                text: $handoffDraft,
+                prompt: Text("Tell Codex what to pick up next...")
+                    .foregroundStyle(theme.textTertiary),
+                axis: .vertical
+            )
+            .font(theme.codeFont(13))
+            .foregroundStyle(theme.textPrimary)
+            .textFieldStyle(.plain)
+            .lineLimit(1 ... 3)
+            .focused(isComposerFocused)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+
+            Divider()
+                .overlay(theme.divider)
+
+            if let composerUtilityNote, !composerUtilityNote.isEmpty {
+                Text(composerUtilityNote)
+                    .font(theme.codeFont(10))
+                    .foregroundStyle(theme.textTertiary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+            }
+
+            HStack(spacing: 8) {
+                Menu {
+                    Button("Paste from Clipboard", action: pasteFromClipboard)
+
+                    Button("Add photos & files") {
+                        showComposerUtilityNote("Remote photo and file attachments are not wired through the host protocol yet.")
+                    }
+
+                    Toggle("Plan mode", isOn: $isPlanModeEnabled)
+
+                    Menu("Speed") {
+                        ComposerReasoningMenuContent(
+                            selected: selectedReasoningOption,
+                            select: selectReasoningOption
+                        )
+                    }
+
+                    Menu("Plugins") {
+                        Button("Plugin mentions are not wired on iPhone yet.") {
+                            showComposerUtilityNote("Plugin mentions from the iPhone composer are not wired yet.")
+                        }
+                    }
+
+                    if canSendHandoff {
+                        Button("Clear Draft", role: .destructive, action: clearDraft)
+                    }
+                } label: {
+                    composerIconButton(systemImage: "plus")
+                }
+                .buttonStyle(.plain)
+
+                Menu {
+                    ComposerModelMenuContent(
+                        options: composerModelOptions,
+                        selectedSlug: selectedModelSlug,
+                        select: selectModelOption
+                    )
+                } label: {
+                    ComposerChip(text: composerModelLabel, showsChevron: true)
+                }
+                .buttonStyle(.plain)
+
+                Menu {
+                    ComposerReasoningMenuContent(
+                        selected: selectedReasoningOption,
+                        select: selectReasoningOption
+                    )
+                } label: {
+                    ComposerChip(text: composerReasoningLabel, showsChevron: true)
+                }
+                .buttonStyle(.plain)
+
+                if isPlanModeEnabled {
+                    ComposerChip(text: "Plan", icon: "list.bullet")
+                }
+
+                if threadNeedsApproval {
+                    ComposerChip(text: "Approval", tone: .warning)
+                }
+
+                if pendingApprovalCount > 0 {
+                    Button(action: openApprovals) {
+                        ComposerChip(
+                            text: "Review \(pendingApprovalCount)",
+                            icon: "checklist"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                Button {
+                    isComposerFocused.wrappedValue = true
+                    showComposerUtilityNote("Use the keyboard's dictation button after focusing the composer.")
+                } label: {
+                    Image(systemName: "mic")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(theme.textTertiary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: sendHandoff) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(canSendHandoff ? sendButtonForeground : theme.textTertiary)
+                        .frame(width: 30, height: 30)
+                        .background(
+                            Circle()
+                                .fill(canSendHandoff ? sendButtonBackground : theme.chromeElevated)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(theme.border, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(canSendHandoff == false)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(theme.backgroundTop.opacity(theme.colorScheme == .dark ? 0.94 : 1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(theme.border, lineWidth: 1)
+        )
+        .shadow(color: theme.shadow.opacity(0.35), radius: 10, y: 2)
+    }
+
+    private var sendButtonBackground: Color {
+        if theme.colorScheme == .light {
+            return theme.chrome
+        }
+        return theme.textPrimary
+    }
+
+    private var sendButtonForeground: Color {
+        if theme.colorScheme == .light {
+            return theme.textPrimary
+        }
+        return theme.backgroundBottom
+    }
+
+    private func composerIconButton(systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(theme.textPrimary)
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(theme.chromeElevated)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(theme.border, lineWidth: 1)
+            )
+    }
+}
+
 struct ThreadSummaryCard: View {
     @Environment(\.sidekickTheme) private var theme
 
@@ -669,7 +713,7 @@ struct ThreadSummaryCard: View {
         SurfaceCard(padding: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 6) {
-                    StatusPill(text: thread.status.label, tone: tone(for: thread.status))
+                    StatusPill(text: thread.status.label, tone: thread.status.tone)
                     if let modelName {
                         StatusPill(text: modelName, tone: .neutral)
                     }
@@ -708,17 +752,6 @@ struct ThreadSummaryCard: View {
                         .foregroundStyle(theme.textTertiary)
                 }
             }
-        }
-    }
-
-    private func tone(for status: ThreadStatus) -> StatusTone {
-        switch status {
-        case .notLoaded, .idle:
-            return .neutral
-        case .systemError:
-            return .danger
-        case .active(let flags):
-            return flags.contains(.waitingOnApproval) ? .warning : .success
         }
     }
 }

@@ -8,11 +8,16 @@ struct PairingLinkPayload: Sendable {
 enum PairingLink {
     static let urlScheme = "codexsidekick"
     private static let pairHost = "pair"
+    private static let maxURLLength = 2048
 
     static func parse(_ rawValue: String) throws -> PairingLinkPayload {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw PairingLinkError.emptyInput
+        }
+
+        guard trimmed.count <= maxURLLength else {
+            throw PairingLinkError.oversizedInput
         }
 
         guard let url = URL(string: trimmed),
@@ -31,12 +36,15 @@ enum PairingLink {
 
 enum PairingLinkError: LocalizedError {
     case emptyInput
+    case oversizedInput
     case unrecognizedFormat
 
     var errorDescription: String? {
         switch self {
         case .emptyInput:
             return "Open a pairing QR or deep link from the host."
+        case .oversizedInput:
+            return "That pairing link is too large. Re-open the pairing QR or link from the host."
         case .unrecognizedFormat:
             return "That sidekick pairing link is not recognized."
         }

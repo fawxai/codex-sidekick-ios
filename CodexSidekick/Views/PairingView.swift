@@ -153,9 +153,18 @@ struct PairingView: View {
                 }
 
                 if selectedPairingMode == .tailscale {
-                    tailscaleDiscoverySection
+                    TailscaleDiscoverySection(
+                        appModel: appModel,
+                        discoveryPlaceholder: discoveryPlaceholder,
+                        discoverySecurityWarning: discoverySecurityWarning
+                    )
                 } else {
-                    directConnectionSection
+                    DirectConnectionSection(
+                        appModel: appModel,
+                        endpointTitle: appModel.connectionEndpointKind.title.uppercased(),
+                        urlPlaceholder: urlPlaceholder,
+                        tokenPlaceholder: tokenPlaceholder
+                    )
                 }
 
                 if let pairingErrorMessage = appModel.pairingErrorMessage {
@@ -174,125 +183,6 @@ struct PairingView: View {
                     .overlay(theme.divider)
 
                 pairingStatusRows
-            }
-        }
-    }
-
-    private var tailscaleDiscoverySection: some View {
-        let isBusy = appModel.isBusyPairing
-
-        return VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Discovery Target")
-                    .font(theme.codeFont(10, weight: .semibold))
-                    .foregroundStyle(theme.textTertiary)
-
-                TextField(discoveryPlaceholder, text: $appModel.discoveryInput)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .sidekickInputFieldStyle()
-
-                if let discoverySecurityWarning {
-                    Text(discoverySecurityWarning)
-                        .font(theme.codeFont(11, weight: .medium))
-                        .foregroundStyle(theme.warning)
-                }
-            }
-
-            if let discoveredHost = appModel.discoveredHost {
-                discoveredHostCard(discoveredHost)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Pairing Code")
-                    .font(theme.codeFont(10, weight: .semibold))
-                    .foregroundStyle(theme.textTertiary)
-
-                TextField("ABCD3F7K", text: $appModel.pairingCodeInput)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                    .sidekickInputFieldStyle()
-
-                HStack(spacing: 8) {
-                    Button {
-                        Task {
-                            await appModel.pairWithDiscoveryCode()
-                        }
-                    } label: {
-                        HStack(spacing: 10) {
-                            if isBusy {
-                                ProgressView()
-                                    .tint(theme.backgroundBottom)
-                            }
-
-                            Text(isBusy ? "Pairing..." : "Pair with Codex")
-                        }
-                    }
-                    .buttonStyle(SidekickActionButtonStyle(tone: .primary, fullWidth: true))
-                    .disabled(
-                        appModel.discoveryInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || appModel.pairingCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || isBusy
-                    )
-                }
-            }
-        }
-    }
-
-    private var directConnectionSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text("Websocket URL")
-                        .font(theme.codeFont(10, weight: .semibold))
-                        .foregroundStyle(theme.textTertiary)
-
-                    Spacer(minLength: 8)
-
-                    StatusPill(text: appModel.connectionEndpointKind.title.uppercased(), tone: .neutral)
-                }
-
-                TextField(urlPlaceholder, text: $appModel.connectionDraft.websocketURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .sidekickInputFieldStyle()
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Bearer Token")
-                    .font(theme.codeFont(10, weight: .semibold))
-                    .foregroundStyle(theme.textTertiary)
-
-                SecureField(tokenPlaceholder, text: $appModel.connectionDraft.authToken)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .sidekickInputFieldStyle()
-            }
-
-            if selectedPairingMode == .tailscale,
-               appModel.connectionDraft.normalizedAuthToken.isEmpty {
-                Text("Direct Tailscale pairing will be rejected until a bearer token is present.")
-                    .font(theme.codeFont(12, weight: .medium))
-                    .foregroundStyle(theme.warning)
-            }
-
-            HStack(spacing: 8) {
-                Button {
-                    Task {
-                        await appModel.connect()
-                    }
-                } label: {
-                    HStack(spacing: 10) {
-                        if appModel.isConnecting {
-                            ProgressView()
-                                .tint(theme.backgroundBottom)
-                        }
-
-                        Text(appModel.isConnecting ? "Connecting..." : "Connect Directly")
-                    }
-                }
-                .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
-                .disabled(appModel.isBusyPairing)
             }
         }
     }
@@ -334,52 +224,6 @@ struct PairingView: View {
                 tone: .neutral
             )
         }
-    }
-
-    private func discoveredHostCard(_ discoveredHost: PairingDiscoveryRecord) -> some View {
-        SurfaceCard(padding: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(discoveredHost.hostLabel)
-                            .font(theme.codeFont(15, weight: .semibold))
-                            .foregroundStyle(theme.textPrimary)
-
-                        Text(discoveredHost.websocketURL)
-                            .font(theme.codeFont(11))
-                            .foregroundStyle(theme.textSecondary)
-                            .lineLimit(2)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    StatusPill(
-                        text: selectedPairingMode.title.uppercased(),
-                        tone: selectedPairingMode == .tailscale ? .success : .neutral
-                    )
-                }
-
-                DotStatusRow(
-                    title: "Discovery",
-                    value: discoveredHost.discoveryURL,
-                    tone: .neutral
-                )
-                DotStatusRow(
-                    title: "Claim",
-                    value: "\(discoveredHost.pairingCode.length)-character \(discoveredHost.pairingCode.format) code",
-                    tone: .neutral
-                )
-                DotStatusRow(
-                    title: "Expires",
-                    value: "\(discoveredHost.pairingCode.ttlSeconds / 60) minutes",
-                    tone: .neutral
-                )
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(theme.panelMuted)
-        )
     }
 
     private var protocolCard: some View {
@@ -511,5 +355,191 @@ struct PairingView: View {
         case .manual:
             appModel.connectionDraft.websocketURL = "wss://codex.example.com:\(port)"
         }
+    }
+}
+
+private struct TailscaleDiscoverySection: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    @Bindable var appModel: AppModel
+
+    let discoveryPlaceholder: String
+    let discoverySecurityWarning: String?
+
+    private var isBusy: Bool {
+        appModel.isBusyPairing
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Discovery Target")
+                    .font(theme.codeFont(10, weight: .semibold))
+                    .foregroundStyle(theme.textTertiary)
+
+                TextField(discoveryPlaceholder, text: $appModel.discoveryInput)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .sidekickInputFieldStyle()
+
+                if let discoverySecurityWarning {
+                    Text(discoverySecurityWarning)
+                        .font(theme.codeFont(11, weight: .medium))
+                        .foregroundStyle(theme.warning)
+                }
+            }
+
+            if let discoveredHost = appModel.discoveredHost {
+                DiscoveredHostCard(discoveredHost: discoveredHost)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Pairing Code")
+                    .font(theme.codeFont(10, weight: .semibold))
+                    .foregroundStyle(theme.textTertiary)
+
+                TextField("ABCD3F7K", text: $appModel.pairingCodeInput)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .sidekickInputFieldStyle()
+
+                HStack(spacing: 8) {
+                    Button(action: pairWithDiscoveryCode) {
+                        HStack(spacing: 10) {
+                            if isBusy {
+                                ProgressView()
+                                    .tint(theme.backgroundBottom)
+                            }
+
+                            Text(isBusy ? "Pairing..." : "Pair with Codex")
+                        }
+                    }
+                    .buttonStyle(SidekickActionButtonStyle(tone: .primary, fullWidth: true))
+                    .disabled(
+                        appModel.discoveryInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || appModel.pairingCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || isBusy
+                    )
+                }
+            }
+        }
+    }
+
+    private func pairWithDiscoveryCode() {
+        Task {
+            await appModel.pairWithDiscoveryCode()
+        }
+    }
+}
+
+private struct DirectConnectionSection: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    @Bindable var appModel: AppModel
+
+    let endpointTitle: String
+    let urlPlaceholder: String
+    let tokenPlaceholder: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("Websocket URL")
+                        .font(theme.codeFont(10, weight: .semibold))
+                        .foregroundStyle(theme.textTertiary)
+
+                    Spacer(minLength: 8)
+
+                    StatusPill(text: endpointTitle, tone: .neutral)
+                }
+
+                TextField(urlPlaceholder, text: $appModel.connectionDraft.websocketURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .sidekickInputFieldStyle()
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Bearer Token")
+                    .font(theme.codeFont(10, weight: .semibold))
+                    .foregroundStyle(theme.textTertiary)
+
+                SecureField(tokenPlaceholder, text: $appModel.connectionDraft.authToken)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .sidekickInputFieldStyle()
+            }
+
+            HStack(spacing: 8) {
+                Button(action: connectDirectly) {
+                    HStack(spacing: 10) {
+                        if appModel.isConnecting {
+                            ProgressView()
+                                .tint(theme.backgroundBottom)
+                        }
+
+                        Text(appModel.isConnecting ? "Connecting..." : "Connect Directly")
+                    }
+                }
+                .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
+                .disabled(appModel.isBusyPairing)
+            }
+        }
+    }
+
+    private func connectDirectly() {
+        Task {
+            await appModel.connect()
+        }
+    }
+}
+
+private struct DiscoveredHostCard: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    let discoveredHost: PairingDiscoveryRecord
+
+    var body: some View {
+        SurfaceCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(discoveredHost.hostLabel)
+                            .font(theme.codeFont(15, weight: .semibold))
+                            .foregroundStyle(theme.textPrimary)
+
+                        Text(discoveredHost.websocketURL)
+                            .font(theme.codeFont(11))
+                            .foregroundStyle(theme.textSecondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    StatusPill(text: "TAILSCALE", tone: .success)
+                }
+
+                DotStatusRow(
+                    title: "Discovery",
+                    value: discoveredHost.discoveryURL,
+                    tone: .neutral
+                )
+                DotStatusRow(
+                    title: "Claim",
+                    value: "\(discoveredHost.pairingCode.length)-character \(discoveredHost.pairingCode.format) code",
+                    tone: .neutral
+                )
+                DotStatusRow(
+                    title: "Expires",
+                    value: "\(discoveredHost.pairingCode.ttlSeconds / 60) minutes",
+                    tone: .neutral
+                )
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(theme.panelMuted)
+        )
     }
 }

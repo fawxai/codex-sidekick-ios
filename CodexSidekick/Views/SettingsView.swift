@@ -67,98 +67,22 @@ struct SettingsView: View {
     }
 
     private var appearanceControlsCard: some View {
-        SurfaceCard {
-            VStack(alignment: .leading, spacing: 14) {
-                settingsSectionHeader(
-                    title: "Theme",
-                    detail: "Use the paired host theme when available, or fall back to a local preset."
-                )
-
-                settingRow(
-                    title: "Sync with host theme",
-                    detail: hostThemeDetail
-                ) {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { appModel.appearanceSettings.syncsWithHostTheme },
-                            set: { appModel.setSyncWithHostTheme($0) }
-                        )
-                    )
-                    .labelsHidden()
-                    .tint(theme.textPrimary)
-                }
-
-                settingRow(
-                    title: "Theme mode",
-                    detail: "Match the desktop appearance controls: Light, Dark, or System."
-                ) {
-                    ThemeModeSelector(
-                        modes: modeOrder,
-                        selectedMode: Binding(
-                            get: { appModel.appearanceSettings.mode },
-                            set: { appModel.setAppearanceMode($0) }
-                        )
-                    )
-                }
-
-                settingRow(
-                    title: "Theme preset",
-                    detail: "Used for local fallback and for explicit iOS-only overrides."
-                ) {
-                    Picker(
-                        "Theme preset",
-                        selection: Binding(
-                            get: { appModel.appearanceSettings.preset },
-                            set: { appModel.setAppearancePreset($0) }
-                        )
-                    ) {
-                        ForEach(SidekickThemePreset.allCases) { preset in
-                            Text(preset.title).tag(preset)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(theme.textPrimary)
-                }
-
-                settingRow(
-                    title: "Translucent sidebar",
-                    detail: "Optional subtle translucency for wide-layout navigation surfaces. Keep this off for the flatter Codex look."
-                ) {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { appModel.appearanceSettings.translucentSidebar },
-                            set: { appModel.setTranslucentSidebar($0) }
-                        )
-                    )
-                    .labelsHidden()
-                    .tint(theme.textPrimary)
-                }
-
-                sliderSetting(
-                    title: "Contrast",
-                    detail: "Adjust the separation between surfaces, borders, and content cards.",
-                    valueText: String(format: "%.0f%%", appModel.appearanceSettings.contrast * 100),
-                    range: 0.45...0.9,
-                    value: Binding(
-                        get: { appModel.appearanceSettings.contrast },
-                        set: { appModel.setContrast($0) }
-                    )
-                )
-            }
-        }
+        AppearanceControlsCard(
+            appModel: appModel,
+            modeOrder: modeOrder,
+            hostThemeDetail: hostThemeDetail
+        )
     }
 
     private var typographyCard: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 14) {
-                settingsSectionHeader(
+                SettingsSectionHeader(
                     title: "Typography",
                     detail: "These map to the desktop app's UI font size and code font size controls."
                 )
 
-                sliderSetting(
+                SliderSettingRow(
                     title: "UI font size",
                     detail: "Adjust the base size used for the Codex UI.",
                     valueText: String(format: "%.0f%%", appModel.appearanceSettings.uiScale * 100),
@@ -169,7 +93,7 @@ struct SettingsView: View {
                     )
                 )
 
-                sliderSetting(
+                SliderSettingRow(
                     title: "Code font size",
                     detail: "Adjust the base size used for code across rollouts and approvals.",
                     valueText: String(format: "%.0f%%", appModel.appearanceSettings.codeScale * 100),
@@ -186,19 +110,19 @@ struct SettingsView: View {
     private var connectionCard: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 14) {
-                settingsSectionHeader(
+                SettingsSectionHeader(
                     title: "Connection",
                     detail: "The appearance sync and live thread state both come from this paired host."
                 )
 
-                settingRow(
+                SettingRow(
                     title: "Host",
                     detail: appModel.pairedConnection?.websocketURL ?? "No paired host"
                 ) {
                     StatusPill(text: appModel.pairedHostLabel, tone: .neutral)
                 }
 
-                settingRow(
+                SettingRow(
                     title: "App-server theme",
                     detail: "Read from `config/read` when the host exposes a theme."
                 ) {
@@ -239,8 +163,108 @@ struct SettingsView: View {
         }
         return "If the paired host exposes its theme, the sidekick mirrors it automatically."
     }
+}
 
-    private func settingsSectionHeader(title: String, detail: String) -> some View {
+private struct AppearanceControlsCard: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    @Bindable var appModel: AppModel
+
+    let modeOrder: [SidekickThemeMode]
+    let hostThemeDetail: String
+
+    var body: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsSectionHeader(
+                    title: "Theme",
+                    detail: "Use the paired host theme when available, or fall back to a local preset."
+                )
+
+                SettingRow(
+                    title: "Sync with host theme",
+                    detail: hostThemeDetail
+                ) {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { appModel.appearanceSettings.syncsWithHostTheme },
+                            set: { appModel.setSyncWithHostTheme($0) }
+                        )
+                    )
+                    .labelsHidden()
+                    .tint(theme.textPrimary)
+                }
+
+                SettingRow(
+                    title: "Theme mode",
+                    detail: "Match the desktop appearance controls: Light, Dark, or System."
+                ) {
+                    ThemeModeSelector(
+                        modes: modeOrder,
+                        selectedMode: Binding(
+                            get: { appModel.appearanceSettings.mode },
+                            set: { appModel.setAppearanceMode($0) }
+                        )
+                    )
+                }
+
+                SettingRow(
+                    title: "Theme preset",
+                    detail: "Used for local fallback and for explicit iOS-only overrides."
+                ) {
+                    Picker(
+                        "Theme preset",
+                        selection: Binding(
+                            get: { appModel.appearanceSettings.preset },
+                            set: { appModel.setAppearancePreset($0) }
+                        )
+                    ) {
+                        ForEach(SidekickThemePreset.allCases) { preset in
+                            Text(preset.title).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(theme.textPrimary)
+                }
+
+                SettingRow(
+                    title: "Translucent sidebar",
+                    detail: "Optional subtle translucency for wide-layout navigation surfaces. Keep this off for the flatter Codex look."
+                ) {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { appModel.appearanceSettings.translucentSidebar },
+                            set: { appModel.setTranslucentSidebar($0) }
+                        )
+                    )
+                    .labelsHidden()
+                    .tint(theme.textPrimary)
+                }
+
+                SliderSettingRow(
+                    title: "Contrast",
+                    detail: "Adjust the separation between surfaces, borders, and content cards.",
+                    valueText: String(format: "%.0f%%", appModel.appearanceSettings.contrast * 100),
+                    range: 0.45...0.9,
+                    value: Binding(
+                        get: { appModel.appearanceSettings.contrast },
+                        set: { appModel.setContrast($0) }
+                    )
+                )
+            }
+        }
+    }
+}
+
+private struct SettingsSectionHeader: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    let title: String
+    let detail: String
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(theme.codeFont(16, weight: .semibold))
@@ -251,12 +275,26 @@ struct SettingsView: View {
                 .foregroundStyle(theme.textSecondary)
         }
     }
+}
 
-    private func settingRow<Control: View>(
+private struct SettingRow<Control: View>: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    let title: String
+    let detail: String
+    let control: Control
+
+    init(
         title: String,
         detail: String,
         @ViewBuilder control: () -> Control
-    ) -> some View {
+    ) {
+        self.title = title
+        self.detail = detail
+        self.control = control()
+    }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -272,7 +310,7 @@ struct SettingsView: View {
 
                 Spacer(minLength: 12)
 
-                control()
+                control
             }
         }
         .padding(12)
@@ -285,14 +323,18 @@ struct SettingsView: View {
                 .stroke(theme.border, lineWidth: 1)
         )
     }
+}
 
-    private func sliderSetting(
-        title: String,
-        detail: String,
-        valueText: String,
-        range: ClosedRange<Double>,
-        value: Binding<Double>
-    ) -> some View {
+private struct SliderSettingRow: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    let title: String
+    let detail: String
+    let valueText: String
+    let range: ClosedRange<Double>
+    @Binding var value: Double
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -312,7 +354,7 @@ struct SettingsView: View {
                     .foregroundStyle(theme.textPrimary)
             }
 
-            Slider(value: value, in: range)
+            Slider(value: $value, in: range)
                 .tint(theme.textPrimary)
         }
         .padding(12)
