@@ -103,6 +103,19 @@ Rules:
 - Store secrets in secure storage, not plain defaults.
 - Never log bearer tokens or emit them into screenshots or debug copy.
 
+### Network Security
+
+- ATS exceptions stay narrow and documented.
+- `NSAllowsLocalNetworking` exists so simulator and same-Mac loopback pairing can
+  reach local `ws://` and HTTP discovery surfaces without a broad transport
+  bypass.
+- The `ts.net` exception exists only for Tailscale-hosted discovery and pairing
+  bootstrap traffic. It covers private tailnet hosts that are already gated by
+  the endpoint policy and bearer-token rules in code.
+- Do not expand ATS exceptions to general remote hosts. Public remote auth stays
+  on `wss://`, and cleartext transport is reserved for local or tailnet-only
+  paths.
+
 ---
 
 ## 6. Review Standard

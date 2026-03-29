@@ -185,7 +185,7 @@ struct ThreadBrowserView: View {
                 connectionCard
 
                 if let banner = appModel.banner {
-                    BannerCard(message: banner.message, tone: banner.tone.statusTone)
+                    BannerCard(message: banner.message, tone: banner.tone)
                 }
 
                 threadOrganizerContent(

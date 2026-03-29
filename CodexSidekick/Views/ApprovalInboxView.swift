@@ -7,10 +7,6 @@ struct ApprovalInboxView: View {
     @Bindable var appModel: AppModel
     @Binding var selectedSection: SidekickSection
 
-    private let gridColumns = [
-        GridItem(.adaptive(minimum: 148, maximum: 220), spacing: 10)
-    ]
-
     var body: some View {
         SidekickScrollScreen(topSpacing: 12) {
             SidekickTopBar {
@@ -42,7 +38,28 @@ struct ApprovalInboxView: View {
                     }
                 } else {
                     ForEach(appModel.pendingApprovals) { approval in
-                        approvalCard(approval)
+                        ApprovalCard(
+                            approval: approval,
+                            threadTitle: appModel.title(for: approval.threadID),
+                            showThread: {
+                                selectedSection = .threads
+                                Task {
+                                    await appModel.selectThread(approval.threadID)
+                                }
+                            },
+                            approveCommand: { sessionScope in
+                                await appModel.approveCommand(approval, sessionScope: sessionScope)
+                            },
+                            denyCommand: { cancelTurn in
+                                await appModel.denyCommand(approval, cancelTurn: cancelTurn)
+                            },
+                            approveFileChange: { sessionScope in
+                                await appModel.approveFileChange(approval, sessionScope: sessionScope)
+                            },
+                            denyFileChange: { cancelTurn in
+                                await appModel.denyFileChange(approval, cancelTurn: cancelTurn)
+                            }
+                        )
                     }
                 }
             }
@@ -82,8 +99,24 @@ struct ApprovalInboxView: View {
         }
     }
 
-    @ViewBuilder
-    private func approvalCard(_ approval: AppModel.PendingApproval) -> some View {
+}
+
+private struct ApprovalCard: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    let approval: AppModel.PendingApproval
+    let threadTitle: String
+    let showThread: () -> Void
+    let approveCommand: (Bool) async -> Void
+    let denyCommand: (Bool) async -> Void
+    let approveFileChange: (Bool) async -> Void
+    let denyFileChange: (Bool) async -> Void
+
+    private let gridColumns = [
+        GridItem(.adaptive(minimum: 148, maximum: 220), spacing: 10)
+    ]
+
+    var body: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
@@ -93,88 +126,80 @@ struct ApprovalInboxView: View {
                             .foregroundStyle(theme.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Text(appModel.title(for: approval.threadID))
+                        Text(threadTitle)
                             .font(theme.font(12))
                             .foregroundStyle(theme.textSecondary)
                     }
 
                     Spacer(minLength: 0)
 
-                    StatusPill(
-                        text: approval.kindLabel,
-                        tone: approval.kindTone
-                    )
+                    StatusPill(text: approval.kindLabel, tone: approval.kindTone)
                 }
 
                 Text(approval.subtitle)
                     .font(theme.font(13))
                     .foregroundStyle(theme.textSecondary)
 
-                approvalMetadata(approval)
+                approvalMetadata
 
-                Button("Show Thread") {
-                    selectedSection = .threads
-                    Task {
-                        await appModel.selectThread(approval.threadID)
-                    }
-                }
-                .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
+                Button("Show Thread", action: showThread)
+                    .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
 
                 LazyVGrid(columns: gridColumns, spacing: 10) {
                     switch approval.kind {
                     case .command:
                         Button("Accept") {
                             Task {
-                                await appModel.approveCommand(approval, sessionScope: false)
+                                await approveCommand(false)
                             }
                         }
                         .buttonStyle(SidekickActionButtonStyle(tone: .primary, fullWidth: true))
 
                         Button("Accept for Session") {
                             Task {
-                                await appModel.approveCommand(approval, sessionScope: true)
+                                await approveCommand(true)
                             }
                         }
                         .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
 
                         Button("Decline") {
                             Task {
-                                await appModel.denyCommand(approval, cancelTurn: false)
+                                await denyCommand(false)
                             }
                         }
                         .buttonStyle(SidekickActionButtonStyle(tone: .danger, fullWidth: true))
 
                         Button("Cancel Turn") {
                             Task {
-                                await appModel.denyCommand(approval, cancelTurn: true)
+                                await denyCommand(true)
                             }
                         }
                         .buttonStyle(SidekickActionButtonStyle(tone: .warning, fullWidth: true))
                     case .fileChange:
                         Button("Apply Changes") {
                             Task {
-                                await appModel.approveFileChange(approval, sessionScope: false)
+                                await approveFileChange(false)
                             }
                         }
                         .buttonStyle(SidekickActionButtonStyle(tone: .primary, fullWidth: true))
 
                         Button("Apply for Session") {
                             Task {
-                                await appModel.approveFileChange(approval, sessionScope: true)
+                                await approveFileChange(true)
                             }
                         }
                         .buttonStyle(SidekickActionButtonStyle(tone: .secondary, fullWidth: true))
 
                         Button("Decline") {
                             Task {
-                                await appModel.denyFileChange(approval, cancelTurn: false)
+                                await denyFileChange(false)
                             }
                         }
                         .buttonStyle(SidekickActionButtonStyle(tone: .danger, fullWidth: true))
 
                         Button("Cancel Turn") {
                             Task {
-                                await appModel.denyFileChange(approval, cancelTurn: true)
+                                await denyFileChange(true)
                             }
                         }
                         .buttonStyle(SidekickActionButtonStyle(tone: .warning, fullWidth: true))
@@ -185,7 +210,7 @@ struct ApprovalInboxView: View {
     }
 
     @ViewBuilder
-    private func approvalMetadata(_ approval: AppModel.PendingApproval) -> some View {
+    private var approvalMetadata: some View {
         switch approval.kind {
         case .command(let params):
             VStack(alignment: .leading, spacing: 8) {

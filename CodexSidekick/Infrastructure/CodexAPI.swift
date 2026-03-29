@@ -204,7 +204,9 @@ extension ThreadStatus: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        switch try container.decode(String.self, forKey: .type) {
+        let rawType = try container.decode(String.self, forKey: .type)
+
+        switch rawType {
         case "notLoaded":
             self = .notLoaded
         case "idle":
@@ -214,6 +216,9 @@ extension ThreadStatus: Decodable {
         case "active":
             self = .active(flags: try container.decodeIfPresent([ThreadActiveFlag].self, forKey: .activeFlags) ?? [])
         default:
+            #if DEBUG
+            print("[ThreadStatus] Unknown status type: \(rawType)")
+            #endif
             self = .notLoaded
         }
     }
@@ -236,6 +241,17 @@ extension ThreadStatus {
                 return "Needs input"
             }
             return "Active"
+        }
+    }
+
+    var tone: StatusTone {
+        switch self {
+        case .notLoaded, .idle:
+            return .neutral
+        case .systemError:
+            return .danger
+        case .active(let flags):
+            return flags.contains(.waitingOnApproval) ? .warning : .success
         }
     }
 
