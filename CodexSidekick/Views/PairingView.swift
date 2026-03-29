@@ -24,7 +24,7 @@ private enum PairingMode: String, CaseIterable, Identifiable {
         case .local:
             return "Loopback pairing for Simulator and same-Mac testing. Connect straight to the websocket endpoint."
         case .tailscale:
-            return "Paste the host discovery URL and enter the 8-character pairing code."
+            return "Preferred phone pairing flow. Paste the host discovery URL and the 8-character pairing code from Codex. You do not need to know the websocket URL or bearer token."
         case .manual:
             return "Advanced remote connection. Use `wss://` when you need bearer auth outside localhost or Tailscale."
         }
@@ -265,6 +265,8 @@ private struct TailscaleDiscoverySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            TailscaleSetupCard()
+
             VStack(alignment: .leading, spacing: 6) {
                 Text("Discovery URL")
                     .font(theme.codeFont(10, weight: .semibold))
@@ -300,6 +302,11 @@ private struct TailscaleDiscoverySection: View {
                     .autocorrectionDisabled()
                     .sidekickInputFieldStyle()
 
+                Text("The short code redeems the bearer token and websocket URL from the host over Tailscale. Use Manual only when you already have direct host credentials.")
+                    .font(theme.codeFont(11, weight: .medium))
+                    .foregroundStyle(theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 HStack(spacing: 8) {
                     Button(action: pairWithDiscoveryCode) {
                         HStack(spacing: 10) {
@@ -325,6 +332,64 @@ private struct TailscaleDiscoverySection: View {
     private func pairWithDiscoveryCode() {
         Task {
             await appModel.pairWithDiscoveryCode()
+        }
+    }
+}
+
+private struct TailscaleSetupCard: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    var body: some View {
+        SurfaceCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Recommended Tailscale Setup")
+                    .font(theme.codeFont(12, weight: .semibold))
+                    .foregroundStyle(theme.textPrimary)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    SetupStepRow(
+                        index: "1",
+                        text: "Ask Codex on your Mac to prepare Sidekick pairing over Tailscale and give you a discovery URL plus pairing code."
+                    )
+                    SetupStepRow(
+                        index: "2",
+                        text: "Paste the discovery URL here. It will usually look like `http://your-mac.tailnet.ts.net:4231/v1/discover` or `http://100.x.y.z:4231/v1/discover`."
+                    )
+                    SetupStepRow(
+                        index: "3",
+                        text: "Enter the short pairing code and tap Pair with Codex. The app will learn the websocket URL and bearer token from the host for you."
+                    )
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(theme.panelMuted)
+        )
+    }
+}
+
+private struct SetupStepRow: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    let index: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(index)
+                .font(theme.codeFont(10, weight: .semibold))
+                .foregroundStyle(theme.textPrimary)
+                .frame(width: 18, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(theme.chromeElevated)
+                )
+
+            Text(text)
+                .font(theme.font(12))
+                .foregroundStyle(theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
