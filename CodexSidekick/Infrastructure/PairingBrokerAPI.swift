@@ -1,10 +1,23 @@
 import Foundation
 
+private let fallbackPairingCodeAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
 struct PairingCodeDescriptor: Decodable, Sendable {
     let format: String
     let length: Int
     let alphabet: String
     let ttlSeconds: Int
+
+    var allowedCharacters: Set<Character> {
+        let source = alphabet.isEmpty ? fallbackPairingCodeAlphabet : alphabet.uppercased()
+        return Set(source)
+    }
+
+    func normalizedCode(from rawValue: String) -> String {
+        rawValue
+            .uppercased()
+            .filter { allowedCharacters.contains($0) }
+    }
 }
 
 struct PairingDiscoveryRecord: Decodable, Identifiable, Sendable {
@@ -68,7 +81,7 @@ private struct PairingBrokerTarget {
 enum PairingBrokerError: LocalizedError {
     case emptyInput
     case invalidDiscoveryURL
-    case invalidCode
+    case invalidCode(length: Int)
     case insecureDiscoveryTarget(host: String)
     case discoveryFailed(String)
     case claimFailed(String)
@@ -80,8 +93,8 @@ enum PairingBrokerError: LocalizedError {
             return "Enter a Tailscale host, Tailscale IP, or discovery URL first."
         case .invalidDiscoveryURL:
             return "That discovery target is not valid. Use a `.ts.net` host, a Tailscale IP, or a full `/v1/discover` URL."
-        case .invalidCode:
-            return "Enter the 8-character pairing code from the host."
+        case .invalidCode(let length):
+            return "Enter the \(length)-character pairing code from the host."
         case .insecureDiscoveryTarget(let host):
             return "Cleartext discovery is only allowed for local or tailnet hosts. `\(host)` must use `https://`."
         case .discoveryFailed(let message), .claimFailed(let message):
@@ -170,9 +183,9 @@ actor PairingBrokerClient {
     }
 
     private func claim(discovery: PairingDiscoveryRecord, code: String) async throws -> ConnectionDraft {
-        let normalizedCode = normalizedCode(from: code)
-        guard !normalizedCode.isEmpty else {
-            throw PairingBrokerError.invalidCode
+        let normalizedCode = discovery.pairingCode.normalizedCode(from: code)
+        guard normalizedCode.count == discovery.pairingCode.length else {
+            throw PairingBrokerError.invalidCode(length: discovery.pairingCode.length)
         }
 
         let target = try requestTarget(from: discovery.claimURL)
@@ -286,12 +299,5 @@ actor PairingBrokerClient {
         let transportKind: PairingBrokerTransportKind =
             hostKind.requiresSocketBootstrapTransport && defaultScheme == "http" ? .socketHTTP : .urlSession
         return PairingBrokerTarget(url: normalizedURL, transportKind: transportKind)
-    }
-
-    private func normalizedCode(from rawValue: String) -> String {
-        let allowed = Set("23456789ABCDEFGHJKLMNPQRSTUVWXYZ")
-        return rawValue
-            .uppercased()
-            .filter { allowed.contains($0) }
     }
 }
