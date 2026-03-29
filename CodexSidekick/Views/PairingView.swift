@@ -1,62 +1,62 @@
 import Observation
 import SwiftUI
 
+private enum PairingMode: String, CaseIterable, Identifiable {
+    case local
+    case tailscale
+    case manual
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .local:
+            return "Local"
+        case .tailscale:
+            return "Tailscale"
+        case .manual:
+            return "Manual"
+        }
+    }
+
+    var guidance: String {
+        switch self {
+        case .local:
+            return "Loopback pairing for simulator and same-Mac testing. Bearer token is optional."
+        case .tailscale:
+            return "Tailnet pairing for your phone. Use the discovery flow above or a `.ts.net` / Tailscale IP websocket URL with a bearer token."
+        case .manual:
+            return "Advanced remote endpoint. Use `wss://` if you need bearer auth outside localhost or Tailscale."
+        }
+    }
+
+    var securityNote: String {
+        switch self {
+        case .local:
+            return "Token optional on loopback"
+        case .tailscale:
+            return "Token required on tailnet"
+        case .manual:
+            return "Prefer `wss://` for remote auth"
+        }
+    }
+
+    var bestFor: String {
+        switch self {
+        case .local:
+            return "Simulator + same-Mac testing"
+        case .tailscale:
+            return "Phone pairing across your tailnet"
+        case .manual:
+            return "Custom secure remote endpoints"
+        }
+    }
+}
+
 struct PairingView: View {
     @Environment(\.sidekickTheme) private var theme
 
     @Bindable var appModel: AppModel
-
-    private enum PairingMode: String, CaseIterable, Identifiable {
-        case local
-        case tailscale
-        case manual
-
-        var id: Self { self }
-
-        var title: String {
-            switch self {
-            case .local:
-                return "Local"
-            case .tailscale:
-                return "Tailscale"
-            case .manual:
-                return "Manual"
-            }
-        }
-
-        var guidance: String {
-            switch self {
-            case .local:
-                return "Loopback pairing for simulator and same-Mac testing. Bearer token is optional."
-            case .tailscale:
-                return "Tailnet pairing for your phone. Use the discovery flow above or a `.ts.net` / Tailscale IP websocket URL with a bearer token."
-            case .manual:
-                return "Advanced remote endpoint. Use `wss://` if you need bearer auth outside localhost or Tailscale."
-            }
-        }
-
-        var securityNote: String {
-            switch self {
-            case .local:
-                return "Token optional on loopback"
-            case .tailscale:
-                return "Token required on tailnet"
-            case .manual:
-                return "Prefer `wss://` for remote auth"
-            }
-        }
-
-        var bestFor: String {
-            switch self {
-            case .local:
-                return "Simulator + same-Mac testing"
-            case .tailscale:
-                return "Phone pairing across your tailnet"
-            case .manual:
-                return "Custom secure remote endpoints"
-            }
-        }
-    }
 
     var body: some View {
         SidekickScrollScreen(
@@ -153,14 +153,40 @@ struct PairingView: View {
                 }
 
                 if selectedPairingMode == .tailscale {
-                    TailscaleDiscoverySection(
-                        appModel: appModel,
-                        discoveryPlaceholder: discoveryPlaceholder,
-                        discoverySecurityWarning: discoverySecurityWarning
-                    )
+                    VStack(alignment: .leading, spacing: 14) {
+                        TailscaleDiscoverySection(
+                            appModel: appModel,
+                            pairingMode: selectedPairingMode,
+                            discoveryPlaceholder: discoveryPlaceholder,
+                            discoverySecurityWarning: discoverySecurityWarning
+                        )
+
+                        Divider()
+                            .overlay(theme.divider)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Direct Tailnet Connection")
+                                .font(theme.codeFont(10, weight: .semibold))
+                                .foregroundStyle(theme.textTertiary)
+
+                            Text("If you already know the tailnet websocket URL, connect directly here. Tailnet websocket auth requires a bearer token.")
+                                .font(theme.font(12))
+                                .foregroundStyle(theme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        DirectConnectionSection(
+                            appModel: appModel,
+                            pairingMode: selectedPairingMode,
+                            endpointTitle: appModel.connectionEndpointKind.title.uppercased(),
+                            urlPlaceholder: urlPlaceholder,
+                            tokenPlaceholder: tokenPlaceholder
+                        )
+                    }
                 } else {
                     DirectConnectionSection(
                         appModel: appModel,
+                        pairingMode: selectedPairingMode,
                         endpointTitle: appModel.connectionEndpointKind.title.uppercased(),
                         urlPlaceholder: urlPlaceholder,
                         tokenPlaceholder: tokenPlaceholder
@@ -363,6 +389,7 @@ private struct TailscaleDiscoverySection: View {
 
     @Bindable var appModel: AppModel
 
+    let pairingMode: PairingMode
     let discoveryPlaceholder: String
     let discoverySecurityWarning: String?
 
@@ -390,7 +417,10 @@ private struct TailscaleDiscoverySection: View {
             }
 
             if let discoveredHost = appModel.discoveredHost {
-                DiscoveredHostCard(discoveredHost: discoveredHost)
+                DiscoveredHostCard(
+                    discoveredHost: discoveredHost,
+                    pairingMode: pairingMode
+                )
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -437,6 +467,7 @@ private struct DirectConnectionSection: View {
 
     @Bindable var appModel: AppModel
 
+    let pairingMode: PairingMode
     let endpointTitle: String
     let urlPlaceholder: String
     let tokenPlaceholder: String
@@ -471,6 +502,13 @@ private struct DirectConnectionSection: View {
                     .sidekickInputFieldStyle()
             }
 
+            if pairingMode == .tailscale,
+               appModel.connectionDraft.normalizedAuthToken.isEmpty {
+                Text("Direct Tailscale pairing will be rejected until a bearer token is present.")
+                    .font(theme.codeFont(12, weight: .medium))
+                    .foregroundStyle(theme.warning)
+            }
+
             HStack(spacing: 8) {
                 Button(action: connectDirectly) {
                     HStack(spacing: 10) {
@@ -499,6 +537,7 @@ private struct DiscoveredHostCard: View {
     @Environment(\.sidekickTheme) private var theme
 
     let discoveredHost: PairingDiscoveryRecord
+    let pairingMode: PairingMode
 
     var body: some View {
         SurfaceCard(padding: 14) {
@@ -517,7 +556,7 @@ private struct DiscoveredHostCard: View {
 
                     Spacer(minLength: 0)
 
-                    StatusPill(text: "TAILSCALE", tone: .success)
+                    StatusPill(text: pairingMode.title.uppercased(), tone: .success)
                 }
 
                 DotStatusRow(

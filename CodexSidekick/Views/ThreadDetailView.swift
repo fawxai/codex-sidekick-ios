@@ -236,10 +236,23 @@ struct ThreadDetailView: View {
 
     private var handoffComposer: some View {
         HandoffComposerView(
+            bindings: handoffComposerBindings,
+            context: handoffComposerContext,
+            actions: handoffComposerActions
+        )
+    }
+
+    private var handoffComposerBindings: HandoffComposerBindings {
+        HandoffComposerBindings(
             handoffDraft: $appModel.handoffDraft,
-            composerUtilityNote: composerUtilityNote,
             isComposerFocused: $isComposerFocused,
-            isPlanModeEnabled: $isPlanModeEnabled,
+            isPlanModeEnabled: $isPlanModeEnabled
+        )
+    }
+
+    private var handoffComposerContext: HandoffComposerContext {
+        HandoffComposerContext(
+            composerUtilityNote: composerUtilityNote,
             canSendHandoff: canSendHandoff,
             composerModelLabel: composerModelLabel,
             composerReasoningLabel: composerReasoningLabel,
@@ -247,7 +260,12 @@ struct ThreadDetailView: View {
             selectedModelSlug: appModel.hostModelName,
             selectedReasoningOption: selectedReasoningOption,
             threadNeedsApproval: thread?.status.isWaitingOnApproval == true,
-            pendingApprovalCount: appModel.pendingApprovals.count,
+            pendingApprovalCount: appModel.pendingApprovals.count
+        )
+    }
+
+    private var handoffComposerActions: HandoffComposerActions {
+        HandoffComposerActions(
             pasteFromClipboard: pasteFromClipboard,
             showComposerUtilityNote: showComposerUtilityNote,
             selectReasoningOption: selectReasoningOption,
@@ -507,13 +525,14 @@ struct ThreadDetailView: View {
     }
 }
 
-private struct HandoffComposerView: View {
-    @Environment(\.sidekickTheme) private var theme
-
-    @Binding var handoffDraft: String
-    let composerUtilityNote: String?
+private struct HandoffComposerBindings {
+    let handoffDraft: Binding<String>
     let isComposerFocused: FocusState<Bool>.Binding
-    @Binding var isPlanModeEnabled: Bool
+    let isPlanModeEnabled: Binding<Bool>
+}
+
+private struct HandoffComposerContext {
+    let composerUtilityNote: String?
     let canSendHandoff: Bool
     let composerModelLabel: String
     let composerReasoningLabel: String
@@ -522,6 +541,9 @@ private struct HandoffComposerView: View {
     let selectedReasoningOption: ComposerReasoningOption?
     let threadNeedsApproval: Bool
     let pendingApprovalCount: Int
+}
+
+private struct HandoffComposerActions {
     let pasteFromClipboard: () -> Void
     let showComposerUtilityNote: (String) -> Void
     let selectReasoningOption: (ComposerReasoningOption) -> Void
@@ -529,12 +551,20 @@ private struct HandoffComposerView: View {
     let clearDraft: () -> Void
     let openApprovals: () -> Void
     let sendHandoff: () -> Void
+}
+
+private struct HandoffComposerView: View {
+    @Environment(\.sidekickTheme) private var theme
+
+    let bindings: HandoffComposerBindings
+    let context: HandoffComposerContext
+    let actions: HandoffComposerActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             TextField(
                 "",
-                text: $handoffDraft,
+                text: bindings.handoffDraft,
                 prompt: Text("Tell Codex what to pick up next...")
                     .foregroundStyle(theme.textTertiary),
                 axis: .vertical
@@ -543,14 +573,14 @@ private struct HandoffComposerView: View {
             .foregroundStyle(theme.textPrimary)
             .textFieldStyle(.plain)
             .lineLimit(1 ... 3)
-            .focused(isComposerFocused)
+            .focused(bindings.isComposerFocused)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
 
             Divider()
                 .overlay(theme.divider)
 
-            if let composerUtilityNote, !composerUtilityNote.isEmpty {
+            if let composerUtilityNote = context.composerUtilityNote, !composerUtilityNote.isEmpty {
                 Text(composerUtilityNote)
                     .font(theme.codeFont(10))
                     .foregroundStyle(theme.textTertiary)
@@ -560,29 +590,29 @@ private struct HandoffComposerView: View {
 
             HStack(spacing: 8) {
                 Menu {
-                    Button("Paste from Clipboard", action: pasteFromClipboard)
+                    Button("Paste from Clipboard", action: actions.pasteFromClipboard)
 
                     Button("Add photos & files") {
-                        showComposerUtilityNote("Remote photo and file attachments are not wired through the host protocol yet.")
+                        actions.showComposerUtilityNote("Remote photo and file attachments are not wired through the host protocol yet.")
                     }
 
-                    Toggle("Plan mode", isOn: $isPlanModeEnabled)
+                    Toggle("Plan mode", isOn: bindings.isPlanModeEnabled)
 
                     Menu("Speed") {
                         ComposerReasoningMenuContent(
-                            selected: selectedReasoningOption,
-                            select: selectReasoningOption
+                            selected: context.selectedReasoningOption,
+                            select: actions.selectReasoningOption
                         )
                     }
 
                     Menu("Plugins") {
                         Button("Plugin mentions are not wired on iPhone yet.") {
-                            showComposerUtilityNote("Plugin mentions from the iPhone composer are not wired yet.")
+                            actions.showComposerUtilityNote("Plugin mentions from the iPhone composer are not wired yet.")
                         }
                     }
 
-                    if canSendHandoff {
-                        Button("Clear Draft", role: .destructive, action: clearDraft)
+                    if context.canSendHandoff {
+                        Button("Clear Draft", role: .destructive, action: actions.clearDraft)
                     }
                 } label: {
                     composerIconButton(systemImage: "plus")
@@ -591,37 +621,37 @@ private struct HandoffComposerView: View {
 
                 Menu {
                     ComposerModelMenuContent(
-                        options: composerModelOptions,
-                        selectedSlug: selectedModelSlug,
-                        select: selectModelOption
+                        options: context.composerModelOptions,
+                        selectedSlug: context.selectedModelSlug,
+                        select: actions.selectModelOption
                     )
                 } label: {
-                    ComposerChip(text: composerModelLabel, showsChevron: true)
+                    ComposerChip(text: context.composerModelLabel, showsChevron: true)
                 }
                 .buttonStyle(.plain)
 
                 Menu {
                     ComposerReasoningMenuContent(
-                        selected: selectedReasoningOption,
-                        select: selectReasoningOption
+                        selected: context.selectedReasoningOption,
+                        select: actions.selectReasoningOption
                     )
                 } label: {
-                    ComposerChip(text: composerReasoningLabel, showsChevron: true)
+                    ComposerChip(text: context.composerReasoningLabel, showsChevron: true)
                 }
                 .buttonStyle(.plain)
 
-                if isPlanModeEnabled {
+                if bindings.isPlanModeEnabled.wrappedValue {
                     ComposerChip(text: "Plan", icon: "list.bullet")
                 }
 
-                if threadNeedsApproval {
+                if context.threadNeedsApproval {
                     ComposerChip(text: "Approval", tone: .warning)
                 }
 
-                if pendingApprovalCount > 0 {
-                    Button(action: openApprovals) {
+                if context.pendingApprovalCount > 0 {
+                    Button(action: actions.openApprovals) {
                         ComposerChip(
-                            text: "Review \(pendingApprovalCount)",
+                            text: "Review \(context.pendingApprovalCount)",
                             icon: "checklist"
                         )
                     }
@@ -631,8 +661,8 @@ private struct HandoffComposerView: View {
                 Spacer()
 
                 Button {
-                    isComposerFocused.wrappedValue = true
-                    showComposerUtilityNote("Use the keyboard's dictation button after focusing the composer.")
+                    bindings.isComposerFocused.wrappedValue = true
+                    actions.showComposerUtilityNote("Use the keyboard's dictation button after focusing the composer.")
                 } label: {
                     Image(systemName: "mic")
                         .font(.system(size: 11, weight: .semibold))
@@ -641,14 +671,14 @@ private struct HandoffComposerView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button(action: sendHandoff) {
+                Button(action: actions.sendHandoff) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(canSendHandoff ? sendButtonForeground : theme.textTertiary)
+                        .foregroundStyle(context.canSendHandoff ? sendButtonForeground : theme.textTertiary)
                         .frame(width: 30, height: 30)
                         .background(
                             Circle()
-                                .fill(canSendHandoff ? sendButtonBackground : theme.chromeElevated)
+                                .fill(context.canSendHandoff ? sendButtonBackground : theme.chromeElevated)
                         )
                         .overlay(
                             Circle()
@@ -656,7 +686,7 @@ private struct HandoffComposerView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(canSendHandoff == false)
+                .disabled(context.canSendHandoff == false)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

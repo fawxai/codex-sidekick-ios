@@ -1,5 +1,70 @@
 import Foundation
 
+private final class PendingResponse: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<JSONValue, Error>?
+    private var continuation: CheckedContinuation<JSONValue, Error>?
+
+    func wait() async throws -> JSONValue {
+        if let result = consumeResult() {
+            return try result.get()
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            storeOrResume(continuation)
+        }
+    }
+
+    func succeed(_ value: JSONValue) {
+        resolve(.success(value))
+    }
+
+    func fail(_ error: Error) {
+        resolve(.failure(error))
+    }
+
+    private func consumeResult() -> Result<JSONValue, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        defer { result = nil }
+        return result
+    }
+
+    private func storeOrResume(_ continuation: CheckedContinuation<JSONValue, Error>) {
+        let pendingResult: Result<JSONValue, Error>?
+
+        lock.lock()
+        if let result {
+            self.result = nil
+            pendingResult = result
+        } else {
+            self.continuation = continuation
+            pendingResult = nil
+        }
+        lock.unlock()
+
+        if let pendingResult {
+            continuation.resume(with: pendingResult)
+        }
+    }
+
+    private func resolve(_ result: Result<JSONValue, Error>) {
+        let pendingContinuation: CheckedContinuation<JSONValue, Error>?
+
+        lock.lock()
+        if let continuation = self.continuation {
+            self.continuation = nil
+            pendingContinuation = continuation
+        } else {
+            self.result = result
+            pendingContinuation = nil
+        }
+        lock.unlock()
+
+        pendingContinuation?.resume(with: result)
+    }
+}
+
 enum CodexTransportError: LocalizedError {
     case failedToEncodeWebSocketMessage
 
@@ -46,7 +111,7 @@ actor CodexTransport {
     private var websocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<CodexTransportEvent>.Continuation?
-    private var pendingResponses: [RPCID: AsyncThrowingStream<JSONValue, Error>.Continuation] = [:]
+    private var pendingResponses: [RPCID: PendingResponse] = [:]
     private var nextRequestID = 1
 
     init(session: URLSession = .shared) {
@@ -108,7 +173,7 @@ actor CodexTransport {
 
     func disconnect() async throws {
         for (_, continuation) in pendingResponses {
-            continuation.finish(throwing: CancellationError())
+            continuation.fail(CancellationError())
         }
         pendingResponses.removeAll()
         receiveTask?.cancel()
@@ -179,8 +244,8 @@ actor CodexTransport {
         id: RPCID,
         envelope: Envelope
     ) async throws -> JSONValue {
-        let (responseStream, continuation) = makePendingResponse()
-        pendingResponses[id] = continuation
+        let pendingResponse = PendingResponse()
+        pendingResponses[id] = pendingResponse
 
         do {
             try await send(envelope)
@@ -189,25 +254,7 @@ actor CodexTransport {
             throw error
         }
 
-        var iterator = responseStream.makeAsyncIterator()
-        guard let rawResult = try await iterator.next() else {
-            throw CancellationError()
-        }
-        return rawResult
-    }
-
-    private func makePendingResponse() -> (
-        AsyncThrowingStream<JSONValue, Error>,
-        AsyncThrowingStream<JSONValue, Error>.Continuation
-    ) {
-        var continuation: AsyncThrowingStream<JSONValue, Error>.Continuation?
-        let stream = AsyncThrowingStream<JSONValue, Error> { continuation = $0 }
-
-        guard let continuation else {
-            preconditionFailure("Pending response continuation was not created.")
-        }
-
-        return (stream, continuation)
+        return try await pendingResponse.wait()
     }
 
     private func send<Envelope: Encodable>(_ envelope: Envelope) async throws {
@@ -348,17 +395,16 @@ actor CodexTransport {
     }
 
     private func resumePendingResponse(id: RPCID, result: JSONValue) {
-        guard let continuation = pendingResponses.removeValue(forKey: id) else {
+        guard let pendingResponse = pendingResponses.removeValue(forKey: id) else {
             return
         }
-        continuation.yield(result)
-        continuation.finish()
+        pendingResponse.succeed(result)
     }
 
     private func failPendingResponse(id: RPCID, error: Error) {
-        guard let continuation = pendingResponses.removeValue(forKey: id) else {
+        guard let pendingResponse = pendingResponses.removeValue(forKey: id) else {
             return
         }
-        continuation.finish(throwing: error)
+        pendingResponse.fail(error)
     }
 }
